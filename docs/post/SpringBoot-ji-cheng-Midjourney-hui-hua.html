@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href="//cdn.staticfile.net/Primer/21.0.7/primer.css" rel="stylesheet" />
+    <link rel="icon" href="https://xlike.email/images/tx.jpg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="**步骤一**
+
+[此处申请免费的KEY](https://app.prodia.com/api)
+
+如 ：b9b42bbb-e5a5-4e55-a71d-xxxxxxxxx
+
+**步骤二**
+
+这是他的[API文档](https://docs.prodia.com/reference/generate)
+
+我们用的是java，所以就得用okhttp和阿里的fastjson
+
+**第三步**
+
+导入Maven依赖
+
+```java
+<dependency>
+    <groupId>com.alibaba.fastjson2</groupId>
+    <artifactId>fastjson2</artifactId>
+    <version>2.0.40</version>
+</dependency>
+<dependency>
+    <groupId>com.squareup.okhttp3</groupId>
+    <artifactId>okhttp</artifactId>
+    <version>4.9.1</version>
+</dependency>
+
+```
+
+**第四步**
+
+编写请求工具类
+
+```java
+**
+ * @author 木池
+ */
+public class Draw_StableDrawUtil {
+
+    private static final String API_KEY = '自己申请的key';
+    private static final String HEAD_TYPE = 'Content-Type';
+    private static final String HEAD_ACCEPT = 'accept';
+    private static final String HEAD_VALUE = 'application/json';
+    private static final String HEADER_X_PRODIA_KEY = 'X-Prodia-Key';
+    private static final String MODELS_URL = 'https://api.prodia.com/v1/sdxl/generate';
+    private static final Integer TIMEOUT_MAX = 5;
+    private static final String BASE_URL = 'https://api.prodia.com/v1/job/%s';
+    private static final long POLL_INTERVAL_MS = 3000;
+
+
+    private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
+            .callTimeout(TIMEOUT_MAX, TimeUnit.MINUTES)
+            .readTimeout(TIMEOUT_MAX, TimeUnit.MINUTES)
+            .build();
+    private static final Logger log = LoggerFactory.getLogger(Draw_StableDrawUtil.class);
+
+
+
+    public static String generateText(String content) throws IOException {
+        JSONObject object = JSONObject.parseObject(content);
+        String prompt = (String) object.get('prompt');
+        try {
+            prompt = TranslatorsUtils.textTrans(prompt);
+        } catch (Exception e) {
+            log.error(e.getMessage());
+        }
+        object.put('prompt', prompt);
+        String requestBodyJson = object.toJSONString();
+        MediaType mediaType = MediaType.parse(HEAD_VALUE);
+        Request request = new Request.Builder()
+                .url(MODELS_URL)
+                .post(RequestBody.create(mediaType, requestBodyJson))
+                .addHeader(HEAD_ACCEPT, HEAD_VALUE)
+                .addHeader(HEAD_TYPE, HEAD_VALUE)
+                .addHeader(HEADER_X_PRODIA_KEY, API_KEY)
+                .build();
+        try (Response response = CLIENT.newCall(request).execute()) {
+            if (response.isSuccessful() && response.body() != null) {
+                JSONObject jsonObject = JSONObject.parseObject(response.body().string());
+                String jobId = jsonObject.getString('job');
+                return getJobDetails(jobId);
+            }
+            throw new IOException('Request failed: ' + response.code() + ' ' + response.message());
+        } catch (InterruptedException e) {
+            return e.getMessage();
+        }
+    }
+
+    /**
+     * 获取任务详情
+     *
+     * @param jobId 任务ID
+     * @return 图片地址
+     */
+    private static String getJobDetails(String jobId) throws IOException, InterruptedException {
+        // 构建请求URL
+        String url = String.format(BASE_URL, jobId);
+        // 构建请求
+        Request request = new Request.Builder()
+                .url(url)
+                .get()
+                .addHeader(HEAD_ACCEPT, HEAD_VALUE)
+                .addHeader(HEADER_X_PRODIA_KEY, API_KEY)
+                .build();
+        boolean isComplete = false;
+        String imageUrl = null;
+        // 开始轮询
+        while (!isComplete) {
+            // 执行请求并处理响应
+            try (Response response = CLIENT.newCall(request).execute()) {
+                if (response.isSuccessful() && response.body() != null) {
+                    // 读取响应体内容
+                    String res = response.body().string();
+                    JSONObject jsonObject = JSONObject.parseObject(res);
+                    String status = jsonObject.getString('status');
+                    // 检查作业状态
+                    if ('succeeded'.equals(status)) {
+                        isComplete = true;
+                        imageUrl = jsonObject.getString('imageUrl');
+                    } else if ('failed'.equals(status)) {
+                        throw new IOException('Job failed: ' + jobId);
+                    }
+                } else {
+                    throw new IOException('Request failed: ' + response.code() + ' ' + response.message());
+                }
+            }
+            if (!isComplete) {
+                Thread.sleep(POLL_INTERVAL_MS);
+            }
+        }
+        return imageUrl;
+    }
+}
+```
+
+**第五步**
+
+配合前端vue使用
+
+前端代码我就直接粘贴了，就不多做解释了
+
+```vue
+<template>
+  <div id='app'>
+    <div class='chat-container' style='height: 820px; max-width: 1350px'>
+      <div class='selection'>
+        <div class='container'>
+          <div class='settings2' @click='chat'><span style='color: #c05ee7'><b>切换AI对话</b></span></div>
+          <div class='settings2' @click='newChat'><span style='color: #2f8099'><b>新版AI对话</b></span></div>
+        </div>
+        <div class='container'>
+          <div class='settings2' @click='Dalle3'><span style='color: #69a142'><b>切换D3绘画</b></span></div>
+          <div class='settings2' @click='Midj'><span style='color: #c65930'><b>切换MJ绘画</b></span></div>
+        </div>
+
+        <h3>模型选择</h3>
+        <el-select v-model='buildObject.model' placeholder='请选择模型'>
+          <el-option
+              v-for='item in models'
+              :key='item.value'
+              :label='item.label'
+              :value='item.value'>
+          </el-option>
+        </el-select>
+
+        <h3>样式预设</h3>
+        <el-select v-model='buildObject.style_preset' placeholder='请选择预设'>
+          <el-option
+              v-for='item in presets'
+              :key='item.value'
+              :label='item.label'
+              :value='item.value'>
+            <span style='float: left'>{{ item.label }}</span>
+            <span style='float: right; color: #8492a6; font-size: 13px'>{{ item.value }}</span>
+          </el-option>
+        </el-select>
+
+        <div class='block'>
+          <h3>steps 步骤</h3>
+          <el-slider v-model='buildObject.steps' style='width: 70%;margin-left: 15%'></el-slider>
+        </div>
+
+        <h3>采样器</h3>
+        <el-select v-model='buildObject.sampler' placeholder='请选择采样器'>
+          <el-option
+              v-for='item in samplers'
+              :key='item.value'
+              :label='item.label'
+              :value='item.value'>
+          </el-option>
+        </el-select>
+
+        <el-tooltip placement='top'>
+          <div slot='content'>为获得最佳性能，请使用以下分辨率之一<br/>1024x1024、1152x896、1216x832、1344x768、1536x640、640x1536、768x1344、832x1216</div>
+          <h3>图像宽度</h3>
+        </el-tooltip>
+        <el-select v-model='buildObject.width' placeholder='请选择图片宽度'>
+          <el-option
+              v-for='item in widths'
+              :key='item.value'
+              :label='item.label'
+              :value='item.value'>
+          </el-option>
+        </el-select>
+
+        <el-tooltip placement='top'>
+          <div slot='content'>为获得最佳性能，请使用以下分辨率之一<br/>1024x1024、1152x896、1216x832、1344x768、1536x640、640x1536、768x1344、832x1216</div>
+          <h3>图像高度</h3>
+        </el-tooltip>
+        <el-select v-model='buildObject.height' placeholder='请选择图片高度'>
+          <el-option
+              v-for='item in widths'
+              :key='item.value'
+              :label='item.label'
+              :value='item.value'>
+          </el-option>
+        </el-select>
+
+
+
+
+      </div>
+
+      <div class='chat-window'>
+        <div class='chat-header'>
+          StableDiffusion绘画
+        </div>
+        <div class='chat-messages' id='chatMessages'>
+          <div v-for='message in messages' :key='message.id' class='message-row'
+               :class='{ 'user-row': message.is_user, 'system-row': !message.is_user }'>
+            <!-- 系统消息头像 -->
+            <img v-if='!message.is_user' :src='system' class='avatar system-avatar' alt='System Avatar'>
+            <!-- 消息内容 -->
+            <div class='message' :class='{ 'user-message': message.is_user, 'system-message': !message.is_user }'>
+              <div v-if='message.loading' class='loading-box'>
+                <div class='loader'></div> <!-- 简单的加载动画 -->
+              </div>
+              <div v-else-if='Array.isArray(message.content)'>
+                <div v-for='(url, index) in message.content' :key='index' class='image-box'>
+<!--                  <el-image-->
+<!--                      style='width: 200px; height: 200px; margin: 5px;'-->
+<!--                      :src='url'-->
+<!--                      fit='cover'-->
+<!--                      @click='handleImageClick(url)'-->
+<!--                  ></el-image>-->
+                  <a :href='url' target='_blank'>{{ url }}</a>
+                </div>
+              </div>
+              <div v-else>
+                {{ message.content }}
+              </div>
+            </div>
+            <!-- 用户消息头像 -->
+            <img v-if='message.is_user' :src='user' class='avatar user-avatar' alt='User Avatar'>
+          </div>
+        </div>
+        <div class='chat-input'>
+          <input type='text' v-model='newMessage' @keydown.enter='sendMessage' placeholder='请输入想要绘画的物体'
+                 class='input-message'>
+          <button @click='sendMessage' class='send-button'>发送</button>
+        </div>
+      </div>
+    </div>
+
+    <el-dialog :visible.sync='dialogVisible'>
+      <el-image :src='dialogImageUrl' style='width: 100%;'></el-image>
+    </el-dialog>
+  </div>
+</template>
+
+<script>
+
+export default {
+  data() {
+    return {
+      system: require('@/assets/system.png'),
+      user: require('@/assets/user.png'),
+      newMessage: '',
+      messages: [],
+      nextMessageId: 1,
+      loading: false, // 用于跟踪图片加载状态
+      imageUrls: [], // 用于存储从服务器响应获得的图片链接
+      dialogImageUrl: '', // 当前点击的图片的URL
+      dialogVisible: false, // 控制模态框的显示
+
+
+      models: [{
+        value: 'dreamshaperXL10_alpha2.safetensors [c8afe2ef]',
+        label: 'dreamshaperXL10_alpha2.safetensors [c8afe2ef]'
+      }, {
+        value: 'dynavisionXL_0411.safetensors [c39cc051]',
+        label: 'dynavisionXL_0411.safetensors [c39cc051]'
+      }, {
+        value: 'juggernautXL_v45.safetensors [e75f5471]',
+        label: 'juggernautXL_v45.safetensors [e75f5471]'
+      }, {
+        value: 'realismEngineSDXL_v10.safetensors [af771c3f]',
+        label: 'realismEngineSDXL_v10.safetensors [af771c3f]'
+      }, {
+        value: 'sd_xl_base_1.0.safetensors [be9edd61]',
+        label: 'sd_xl_base_1.0.safetensors [be9edd61]'
+      },],
+
+      presets: [ { value: '3d-model', label: '3D模型' },
+        { value: 'analog-film', label: '胶片' },
+        { value: 'anime', label: '动漫' },
+        { value: 'cinematic', label: '电影化的' },
+        { value: 'comic-book', label: '漫画书' },
+        { value: 'digital-art', label: '数字艺术' },
+        { value: 'enhance', label: '增强' },
+        { value: 'fantasy-art', label: '奇幻艺术' },
+        { value: 'isometric', label: '等轴测' },
+        { value: 'line-art', label: '线描' },
+        { value: 'low-poly', label: '低多边形' },
+        { value: 'neon-punk', label: '霓虹朋克' },
+        { value: 'origami', label: '折纸' },
+        { value: 'photographic', label: '摄影的' },
+        { value: 'pixel-art', label: '像素艺术' },
+        { value: 'texture', label: '纹理' },
+        { value: 'craft-clay', label: '手工陶土' }],
+
+      samplers:[
+        { value: 'Euler', label: 'Euler' },
+        { value: 'Euler_a', label: 'Euler a' },
+        { value: 'LMS', label: 'LMS' },
+        { value: 'Heun', label: 'Heun' },
+        { value: 'DPM2', label: 'DPM2' },
+        { value: 'DPM2_a', label: 'DPM2 a' },
+        { value: 'DPM2S_a', label: 'DPM++ 2S a' },
+        { value: 'DPM2M', label: 'DPM++ 2M' },
+        { value: 'DPMSDE', label: 'DPM++ SDE' },
+        { value: 'DPM_fast', label: 'DPM fast' },
+        { value: 'DPM_adaptive', label: 'DPM adaptive' },
+        { value: 'LMS_Karras', label: 'LMS Karras' },
+        { value: 'DPM2_Karras', label: 'DPM2 Karras' },
+        { value: 'DPM2_a_Karras', label: 'DPM2 a Karras' },
+        { value: 'DPM2S_a_Karras', label: 'DPM++ 2S a Karras' },
+        { value: 'DPM2M_Karras', label: 'DPM++ 2M Karras' },
+        { value: 'DPMSDE_Karras', label: 'DPM++ SDE Karras' }
+      ],
+
+      widths:[
+        {label:'1024',value:'1024'},
+        {label:'1152',value:'1152'},
+        {label:'1216',value:'1216'},
+        {label:'1344',value:'1344'},
+        {label:'1536',value:'1536'},
+        {label:'640',value:'640'},
+        {label:'768',value:'768'},
+        {label:'832',value:'832'},
+      ],
+
+      heights:[
+        {label:'1024',value:'1024'},
+        {label:'896',value:'896'},
+        {label:'832',value:'832'},
+        {label:'768',value:'768'},
+        {label:'640',value:'640'},
+        {label:'1536',value:'1536'},
+        {label:'1344',value:'1344'},
+        {label:'1216',value:'1216'},
+      ],
+
+        buildObject: {
+          model: 'sd_xl_base_1.0.safetensors [be9edd61]',
+          prompt: '',
+          negative_prompt: 'badly drawn',
+          style_preset: 'analog-film',
+          steps: 25,
+          cfg_scale: 7,
+          seed: -1,
+          sampler: 'DPM++ 2M Karras',
+          width: 1024,
+          height: 1024
+        }
+
+    };
+  },
+  created() {
+    this.messages.push({
+      loading: false,
+      is_user: false,
+      id: this.nextMessageId++,
+      content: '请描述你想要的图片，怕你们搞黄，请自行在浏览器打开',
+    });
+    this.messages.push({
+      loading: false,
+      is_user: false,
+      id: this.nextMessageId++,
+      content: '最好更改所需要的样式预设哦，默认是胶片，胶片图片质量好，但是加载慢。">
+<meta property="og:title" content="SpringBoot集成Midjourney绘画">
+<meta property="og:description" content="**步骤一**
+
+[此处申请免费的KEY](https://app.prodia.com/api)
+
+如 ：b9b42bbb-e5a5-4e55-a71d-xxxxxxxxx
+
+**步骤二**
+
+这是他的[API文档](https://docs.prodia.com/reference/generate)
+
+我们用的是java，所以就得用okhttp和阿里的fastjson
+
+**第三步**
+
+导入Maven依赖
+
+```java
+<dependency>
+    <groupId>com.alibaba.fastjson2</groupId>
+    <artifactId>fastjson2</artifactId>
+    <version>2.0.40</version>
+</dependency>
+<dependency>
+    <groupId>com.squareup.okhttp3</groupId>
+    <artifactId>okhttp</artifactId>
+    <version>4.9.1</version>
+</dependency>
+
+```
+
+**第四步**
+
+编写请求工具类
+
+```java
+**
+ * @author 木池
+ */
+public class Draw_StableDrawUtil {
+
+    private static final String API_KEY = '自己申请的key';
+    private static final String HEAD_TYPE = 'Content-Type';
+    private static final String HEAD_ACCEPT = 'accept';
+    private static final String HEAD_VALUE = 'application/json';
+    private static final String HEADER_X_PRODIA_KEY = 'X-Prodia-Key';
+    private static final String MODELS_URL = 'https://api.prodia.com/v1/sdxl/generate';
+    private static final Integer TIMEOUT_MAX = 5;
+    private static final String BASE_URL = 'https://api.prodia.com/v1/job/%s';
+    private static final long POLL_INTERVAL_MS = 3000;
+
+
+    private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
+            .callTimeout(TIMEOUT_MAX, TimeUnit.MINUTES)
+            .readTimeout(TIMEOUT_MAX, TimeUnit.MINUTES)
+            .build();
+    private static final Logger log = LoggerFactory.getLogger(Draw_StableDrawUtil.class);
+
+
+
+    public static String generateText(String content) throws IOException {
+        JSONObject object = JSONObject.parseObject(content);
+        String prompt = (String) object.get('prompt');
+        try {
+            prompt = TranslatorsUtils.textTrans(prompt);
+        } catch (Exception e) {
+            log.error(e.getMessage());
+        }
+        object.put('prompt', prompt);
+        String requestBodyJson = object.toJSONString();
+        MediaType mediaType = MediaType.parse(HEAD_VALUE);
+        Request request = new Request.Builder()
+                .url(MODELS_URL)
+                .post(RequestBody.create(mediaType, requestBodyJson))
+                .addHeader(HEAD_ACCEPT, HEAD_VALUE)
+                .addHeader(HEAD_TYPE, HEAD_VALUE)
+                .addHeader(HEADER_X_PRODIA_KEY, API_KEY)
+                .build();
+        try (Response response = CLIENT.newCall(request).execute()) {
+            if (response.isSuccessful() && response.body() != null) {
+                JSONObject jsonObject = JSONObject.parseObject(response.body().string());
+                String jobId = jsonObject.getString('job');
+                return getJobDetails(jobId);
+            }
+            throw new IOException('Request failed: ' + response.code() + ' ' + response.message());
+        } catch (InterruptedException e) {
+            return e.getMessage();
+        }
+    }
+
+    /**
+     * 获取任务详情
+     *
+     * @param jobId 任务ID
+     * @return 图片地址
+     */
+    private static String getJobDetails(String jobId) throws IOException, InterruptedException {
+        // 构建请求URL
+        String url = String.format(BASE_URL, jobId);
+        // 构建请求
+        Request request = new Request.Builder()
+                .url(url)
+                .get()
+                .addHeader(HEAD_ACCEPT, HEAD_VALUE)
+                .addHeader(HEADER_X_PRODIA_KEY, API_KEY)
+                .build();
+        boolean isComplete = false;
+        String imageUrl = null;
+        // 开始轮询
+        while (!isComplete) {
+            // 执行请求并处理响应
+            try (Response response = CLIENT.newCall(request).execute()) {
+                if (response.isSuccessful() && response.body() != null) {
+                    // 读取响应体内容
+                    String res = response.body().string();
+                    JSONObject jsonObject = JSONObject.parseObject(res);
+                    String status = jsonObject.getString('status');
+                    // 检查作业状态
+                    if ('succeeded'.equals(status)) {
+                        isComplete = true;
+                        imageUrl = jsonObject.getString('imageUrl');
+                    } else if ('failed'.equals(status)) {
+                        throw new IOException('Job failed: ' + jobId);
+                    }
+                } else {
+                    throw new IOException('Request failed: ' + response.code() + ' ' + response.message());
+                }
+            }
+            if (!isComplete) {
+                Thread.sleep(POLL_INTERVAL_MS);
+            }
+        }
+        return imageUrl;
+    }
+}
+```
+
+**第五步**
+
+配合前端vue使用
+
+前端代码我就直接粘贴了，就不多做解释了
+
+```vue
+<template>
+  <div id='app'>
+    <div class='chat-container' style='height: 820px; max-width: 1350px'>
+      <div class='selection'>
+        <div class='container'>
+          <div class='settings2' @click='chat'><span style='color: #c05ee7'><b>切换AI对话</b></span></div>
+          <div class='settings2' @click='newChat'><span style='color: #2f8099'><b>新版AI对话</b></span></div>
+        </div>
+        <div class='container'>
+          <div class='settings2' @click='Dalle3'><span style='color: #69a142'><b>切换D3绘画</b></span></div>
+          <div class='settings2' @click='Midj'><span style='color: #c65930'><b>切换MJ绘画</b></span></div>
+        </div>
+
+        <h3>模型选择</h3>
+        <el-select v-model='buildObject.model' placeholder='请选择模型'>
+          <el-option
+              v-for='item in models'
+              :key='item.value'
+              :label='item.label'
+              :value='item.value'>
+          </el-option>
+        </el-select>
+
+        <h3>样式预设</h3>
+        <el-select v-model='buildObject.style_preset' placeholder='请选择预设'>
+          <el-option
+              v-for='item in presets'
+              :key='item.value'
+              :label='item.label'
+              :value='item.value'>
+            <span style='float: left'>{{ item.label }}</span>
+            <span style='float: right; color: #8492a6; font-size: 13px'>{{ item.value }}</span>
+          </el-option>
+        </el-select>
+
+        <div class='block'>
+          <h3>steps 步骤</h3>
+          <el-slider v-model='buildObject.steps' style='width: 70%;margin-left: 15%'></el-slider>
+        </div>
+
+        <h3>采样器</h3>
+        <el-select v-model='buildObject.sampler' placeholder='请选择采样器'>
+          <el-option
+              v-for='item in samplers'
+              :key='item.value'
+              :label='item.label'
+              :value='item.value'>
+          </el-option>
+        </el-select>
+
+        <el-tooltip placement='top'>
+          <div slot='content'>为获得最佳性能，请使用以下分辨率之一<br/>1024x1024、1152x896、1216x832、1344x768、1536x640、640x1536、768x1344、832x1216</div>
+          <h3>图像宽度</h3>
+        </el-tooltip>
+        <el-select v-model='buildObject.width' placeholder='请选择图片宽度'>
+          <el-option
+              v-for='item in widths'
+              :key='item.value'
+              :label='item.label'
+              :value='item.value'>
+          </el-option>
+        </el-select>
+
+        <el-tooltip placement='top'>
+          <div slot='content'>为获得最佳性能，请使用以下分辨率之一<br/>1024x1024、1152x896、1216x832、1344x768、1536x640、640x1536、768x1344、832x1216</div>
+          <h3>图像高度</h3>
+        </el-tooltip>
+        <el-select v-model='buildObject.height' placeholder='请选择图片高度'>
+          <el-option
+              v-for='item in widths'
+              :key='item.value'
+              :label='item.label'
+              :value='item.value'>
+          </el-option>
+        </el-select>
+
+
+
+
+      </div>
+
+      <div class='chat-window'>
+        <div class='chat-header'>
+          StableDiffusion绘画
+        </div>
+        <div class='chat-messages' id='chatMessages'>
+          <div v-for='message in messages' :key='message.id' class='message-row'
+               :class='{ 'user-row': message.is_user, 'system-row': !message.is_user }'>
+            <!-- 系统消息头像 -->
+            <img v-if='!message.is_user' :src='system' class='avatar system-avatar' alt='System Avatar'>
+            <!-- 消息内容 -->
+            <div class='message' :class='{ 'user-message': message.is_user, 'system-message': !message.is_user }'>
+              <div v-if='message.loading' class='loading-box'>
+                <div class='loader'></div> <!-- 简单的加载动画 -->
+              </div>
+              <div v-else-if='Array.isArray(message.content)'>
+                <div v-for='(url, index) in message.content' :key='index' class='image-box'>
+<!--                  <el-image-->
+<!--                      style='width: 200px; height: 200px; margin: 5px;'-->
+<!--                      :src='url'-->
+<!--                      fit='cover'-->
+<!--                      @click='handleImageClick(url)'-->
+<!--                  ></el-image>-->
+                  <a :href='url' target='_blank'>{{ url }}</a>
+                </div>
+              </div>
+              <div v-else>
+                {{ message.content }}
+              </div>
+            </div>
+            <!-- 用户消息头像 -->
+            <img v-if='message.is_user' :src='user' class='avatar user-avatar' alt='User Avatar'>
+          </div>
+        </div>
+        <div class='chat-input'>
+          <input type='text' v-model='newMessage' @keydown.enter='sendMessage' placeholder='请输入想要绘画的物体'
+                 class='input-message'>
+          <button @click='sendMessage' class='send-button'>发送</button>
+        </div>
+      </div>
+    </div>
+
+    <el-dialog :visible.sync='dialogVisible'>
+      <el-image :src='dialogImageUrl' style='width: 100%;'></el-image>
+    </el-dialog>
+  </div>
+</template>
+
+<script>
+
+export default {
+  data() {
+    return {
+      system: require('@/assets/system.png'),
+      user: require('@/assets/user.png'),
+      newMessage: '',
+      messages: [],
+      nextMessageId: 1,
+      loading: false, // 用于跟踪图片加载状态
+      imageUrls: [], // 用于存储从服务器响应获得的图片链接
+      dialogImageUrl: '', // 当前点击的图片的URL
+      dialogVisible: false, // 控制模态框的显示
+
+
+      models: [{
+        value: 'dreamshaperXL10_alpha2.safetensors [c8afe2ef]',
+        label: 'dreamshaperXL10_alpha2.safetensors [c8afe2ef]'
+      }, {
+        value: 'dynavisionXL_0411.safetensors [c39cc051]',
+        label: 'dynavisionXL_0411.safetensors [c39cc051]'
+      }, {
+        value: 'juggernautXL_v45.safetensors [e75f5471]',
+        label: 'juggernautXL_v45.safetensors [e75f5471]'
+      }, {
+        value: 'realismEngineSDXL_v10.safetensors [af771c3f]',
+        label: 'realismEngineSDXL_v10.safetensors [af771c3f]'
+      }, {
+        value: 'sd_xl_base_1.0.safetensors [be9edd61]',
+        label: 'sd_xl_base_1.0.safetensors [be9edd61]'
+      },],
+
+      presets: [ { value: '3d-model', label: '3D模型' },
+        { value: 'analog-film', label: '胶片' },
+        { value: 'anime', label: '动漫' },
+        { value: 'cinematic', label: '电影化的' },
+        { value: 'comic-book', label: '漫画书' },
+        { value: 'digital-art', label: '数字艺术' },
+        { value: 'enhance', label: '增强' },
+        { value: 'fantasy-art', label: '奇幻艺术' },
+        { value: 'isometric', label: '等轴测' },
+        { value: 'line-art', label: '线描' },
+        { value: 'low-poly', label: '低多边形' },
+        { value: 'neon-punk', label: '霓虹朋克' },
+        { value: 'origami', label: '折纸' },
+        { value: 'photographic', label: '摄影的' },
+        { value: 'pixel-art', label: '像素艺术' },
+        { value: 'texture', label: '纹理' },
+        { value: 'craft-clay', label: '手工陶土' }],
+
+      samplers:[
+        { value: 'Euler', label: 'Euler' },
+        { value: 'Euler_a', label: 'Euler a' },
+        { value: 'LMS', label: 'LMS' },
+        { value: 'Heun', label: 'Heun' },
+        { value: 'DPM2', label: 'DPM2' },
+        { value: 'DPM2_a', label: 'DPM2 a' },
+        { value: 'DPM2S_a', label: 'DPM++ 2S a' },
+        { value: 'DPM2M', label: 'DPM++ 2M' },
+        { value: 'DPMSDE', label: 'DPM++ SDE' },
+        { value: 'DPM_fast', label: 'DPM fast' },
+        { value: 'DPM_adaptive', label: 'DPM adaptive' },
+        { value: 'LMS_Karras', label: 'LMS Karras' },
+        { value: 'DPM2_Karras', label: 'DPM2 Karras' },
+        { value: 'DPM2_a_Karras', label: 'DPM2 a Karras' },
+        { value: 'DPM2S_a_Karras', label: 'DPM++ 2S a Karras' },
+        { value: 'DPM2M_Karras', label: 'DPM++ 2M Karras' },
+        { value: 'DPMSDE_Karras', label: 'DPM++ SDE Karras' }
+      ],
+
+      widths:[
+        {label:'1024',value:'1024'},
+        {label:'1152',value:'1152'},
+        {label:'1216',value:'1216'},
+        {label:'1344',value:'1344'},
+        {label:'1536',value:'1536'},
+        {label:'640',value:'640'},
+        {label:'768',value:'768'},
+        {label:'832',value:'832'},
+      ],
+
+      heights:[
+        {label:'1024',value:'1024'},
+        {label:'896',value:'896'},
+        {label:'832',value:'832'},
+        {label:'768',value:'768'},
+        {label:'640',value:'640'},
+        {label:'1536',value:'1536'},
+        {label:'1344',value:'1344'},
+        {label:'1216',value:'1216'},
+      ],
+
+        buildObject: {
+          model: 'sd_xl_base_1.0.safetensors [be9edd61]',
+          prompt: '',
+          negative_prompt: 'badly drawn',
+          style_preset: 'analog-film',
+          steps: 25,
+          cfg_scale: 7,
+          seed: -1,
+          sampler: 'DPM++ 2M Karras',
+          width: 1024,
+          height: 1024
+        }
+
+    };
+  },
+  created() {
+    this.messages.push({
+      loading: false,
+      is_user: false,
+      id: this.nextMessageId++,
+      content: '请描述你想要的图片，怕你们搞黄，请自行在浏览器打开',
+    });
+    this.messages.push({
+      loading: false,
+      is_user: false,
+      id: this.nextMessageId++,
+      content: '最好更改所需要的样式预设哦，默认是胶片，胶片图片质量好，但是加载慢。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://xliking.github.io/post/SpringBoot-ji-cheng-Midjourney-hui-hua.html">
+<meta property="og:image" content="https://xlike.email/images/tx.jpg">
+<title>SpringBoot集成Midjourney绘画</title>
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">SpringBoot集成Midjourney绘画</h1>
+<div class="title-right">
+    <a href="https://xliking.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/xliking/xliking.github.io/issues/5" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><p><strong>步骤一</strong></p>
+<p><a href="https://app.prodia.com/api" rel="nofollow">此处申请免费的KEY</a></p>
+<p>如 ：b9b42bbb-e5a5-4e55-a71d-xxxxxxxxx</p>
+<p><strong>步骤二</strong></p>
+<p>这是他的<a href="https://docs.prodia.com/reference/generate" rel="nofollow">API文档</a></p>
+<p>我们用的是java，所以就得用okhttp和阿里的fastjson</p>
+<p><strong>第三步</strong></p>
+<p>导入Maven依赖</p>
+<div class="highlight highlight-source-java"><pre class="notranslate">&lt;<span class="pl-s1">dependency</span>&gt;
+    &lt;<span class="pl-s1">groupId</span>&gt;<span class="pl-smi">com</span>.<span class="pl-smi">alibaba</span>.<span class="pl-smi">fastjson2</span>&lt;/<span class="pl-smi">groupId</span>&gt;
+    &lt;<span class="pl-s1">artifactId</span>&gt;<span class="pl-s1">fastjson2</span>&lt;/<span class="pl-s1">artifactId</span>&gt;
+    &lt;<span class="pl-s1">version</span>&gt;<span class="pl-c1">2.0</span>.<span class="pl-c1">40</span>&lt;/<span class="pl-smi">version</span>&gt;
+&lt;/<span class="pl-s1">dependency</span>&gt;
+&lt;<span class="pl-s1">dependency</span>&gt;
+    &lt;<span class="pl-s1">groupId</span>&gt;<span class="pl-smi">com</span>.<span class="pl-smi">squareup</span>.<span class="pl-smi">okhttp3</span>&lt;/<span class="pl-smi">groupId</span>&gt;
+    &lt;<span class="pl-s1">artifactId</span>&gt;<span class="pl-s1">okhttp</span>&lt;/<span class="pl-s1">artifactId</span>&gt;
+    &lt;<span class="pl-s1">version</span>&gt;<span class="pl-c1">4.9</span>.<span class="pl-c1">1</span>&lt;/<span class="pl-smi">version</span>&gt;
+&lt;/<span class="pl-s1">dependency</span>&gt;</pre></div>
+<p><strong>第四步</strong></p>
+<p>编写请求工具类</p>
+<div class="highlight highlight-source-java"><pre class="notranslate">**
+ * <span class="pl-c1">@</span><span class="pl-c1">author</span> 木池
+ */
+<span class="pl-k">public</span> <span class="pl-k">class</span> <span class="pl-smi">Draw_StableDrawUtil</span> {
+
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">String</span> <span class="pl-c1">API_KEY</span> = <span class="pl-s">"自己申请的key"</span>;
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">String</span> <span class="pl-c1">HEAD_TYPE</span> = <span class="pl-s">"Content-Type"</span>;
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">String</span> <span class="pl-c1">HEAD_ACCEPT</span> = <span class="pl-s">"accept"</span>;
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">String</span> <span class="pl-c1">HEAD_VALUE</span> = <span class="pl-s">"application/json"</span>;
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">String</span> <span class="pl-c1">HEADER_X_PRODIA_KEY</span> = <span class="pl-s">"X-Prodia-Key"</span>;
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">String</span> <span class="pl-c1">MODELS_URL</span> = <span class="pl-s">"https://api.prodia.com/v1/sdxl/generate"</span>;
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">Integer</span> <span class="pl-c1">TIMEOUT_MAX</span> = <span class="pl-c1">5</span>;
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">String</span> <span class="pl-c1">BASE_URL</span> = <span class="pl-s">"https://api.prodia.com/v1/job/%s"</span>;
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">long</span> <span class="pl-c1">POLL_INTERVAL_MS</span> = <span class="pl-c1">3000</span>;
+
+
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">OkHttpClient</span> <span class="pl-c1">CLIENT</span> = <span class="pl-k">new</span> <span class="pl-smi">OkHttpClient</span>.<span class="pl-smi">Builder</span>()
+            .<span class="pl-en">callTimeout</span>(<span class="pl-c1">TIMEOUT_MAX</span>, <span class="pl-smi">TimeUnit</span>.<span class="pl-c1">MINUTES</span>)
+            .<span class="pl-en">readTimeout</span>(<span class="pl-c1">TIMEOUT_MAX</span>, <span class="pl-smi">TimeUnit</span>.<span class="pl-c1">MINUTES</span>)
+            .<span class="pl-en">build</span>();
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">Logger</span> <span class="pl-s1">log</span> = <span class="pl-smi">LoggerFactory</span>.<span class="pl-en">getLogger</span>(<span class="pl-smi">Draw_StableDrawUtil</span>.<span class="pl-k">class</span>);
+
+
+
+    <span class="pl-k">public</span> <span class="pl-k">static</span> <span class="pl-smi">String</span> <span class="pl-en">generateText</span>(<span class="pl-smi">String</span> <span class="pl-s1">content</span>) <span class="pl-k">throws</span> <span class="pl-smi">IOException</span> {
+        <span class="pl-smi">JSONObject</span> <span class="pl-s1">object</span> = <span class="pl-smi">JSONObject</span>.<span class="pl-en">parseObject</span>(<span class="pl-s1">content</span>);
+        <span class="pl-smi">String</span> <span class="pl-s1">prompt</span> = (<span class="pl-smi">String</span>) <span class="pl-s1">object</span>.<span class="pl-en">get</span>(<span class="pl-s">"prompt"</span>);
+        <span class="pl-k">try</span> {
+            <span class="pl-s1">prompt</span> = <span class="pl-smi">TranslatorsUtils</span>.<span class="pl-en">textTrans</span>(<span class="pl-s1">prompt</span>);
+        } <span class="pl-k">catch</span> (<span class="pl-smi">Exception</span> <span class="pl-s1">e</span>) {
+            <span class="pl-s1">log</span>.<span class="pl-en">error</span>(<span class="pl-s1">e</span>.<span class="pl-en">getMessage</span>());
+        }
+        <span class="pl-s1">object</span>.<span class="pl-en">put</span>(<span class="pl-s">"prompt"</span>, <span class="pl-s1">prompt</span>);
+        <span class="pl-smi">String</span> <span class="pl-s1">requestBodyJson</span> = <span class="pl-s1">object</span>.<span class="pl-en">toJSONString</span>();
+        <span class="pl-smi">MediaType</span> <span class="pl-s1">mediaType</span> = <span class="pl-smi">MediaType</span>.<span class="pl-en">parse</span>(<span class="pl-c1">HEAD_VALUE</span>);
+        <span class="pl-smi">Request</span> <span class="pl-s1">request</span> = <span class="pl-k">new</span> <span class="pl-smi">Request</span>.<span class="pl-smi">Builder</span>()
+                .<span class="pl-en">url</span>(<span class="pl-c1">MODELS_URL</span>)
+                .<span class="pl-en">post</span>(<span class="pl-smi">RequestBody</span>.<span class="pl-en">create</span>(<span class="pl-s1">mediaType</span>, <span class="pl-s1">requestBodyJson</span>))
+                .<span class="pl-en">addHeader</span>(<span class="pl-c1">HEAD_ACCEPT</span>, <span class="pl-c1">HEAD_VALUE</span>)
+                .<span class="pl-en">addHeader</span>(<span class="pl-c1">HEAD_TYPE</span>, <span class="pl-c1">HEAD_VALUE</span>)
+                .<span class="pl-en">addHeader</span>(<span class="pl-c1">HEADER_X_PRODIA_KEY</span>, <span class="pl-c1">API_KEY</span>)
+                .<span class="pl-en">build</span>();
+        <span class="pl-k">try</span> (<span class="pl-smi">Response</span> <span class="pl-s1">response</span> = <span class="pl-smi">CLIENT</span>.<span class="pl-en">newCall</span>(<span class="pl-s1">request</span>).<span class="pl-en">execute</span>()) {
+            <span class="pl-k">if</span> (<span class="pl-s1">response</span>.<span class="pl-en">isSuccessful</span>() &amp;&amp; <span class="pl-s1">response</span>.<span class="pl-en">body</span>() != <span class="pl-c1">null</span>) {
+                <span class="pl-smi">JSONObject</span> <span class="pl-s1">jsonObject</span> = <span class="pl-smi">JSONObject</span>.<span class="pl-en">parseObject</span>(<span class="pl-s1">response</span>.<span class="pl-en">body</span>().<span class="pl-en">string</span>());
+                <span class="pl-smi">String</span> <span class="pl-s1">jobId</span> = <span class="pl-s1">jsonObject</span>.<span class="pl-en">getString</span>(<span class="pl-s">"job"</span>);
+                <span class="pl-k">return</span> <span class="pl-en">getJobDetails</span>(<span class="pl-s1">jobId</span>);
+            }
+            <span class="pl-k">throw</span> <span class="pl-k">new</span> <span class="pl-smi">IOException</span>(<span class="pl-s">"Request failed: "</span> + <span class="pl-s1">response</span>.<span class="pl-en">code</span>() + <span class="pl-s">" "</span> + <span class="pl-s1">response</span>.<span class="pl-en">message</span>());
+        } <span class="pl-k">catch</span> (<span class="pl-smi">InterruptedException</span> <span class="pl-s1">e</span>) {
+            <span class="pl-k">return</span> <span class="pl-s1">e</span>.<span class="pl-en">getMessage</span>();
+        }
+    }
+
+    <span class="pl-c">/**</span>
+<span class="pl-c">     * 获取任务详情</span>
+<span class="pl-c">     *</span>
+<span class="pl-c">     * @param jobId 任务ID</span>
+<span class="pl-c">     * @return 图片地址</span>
+<span class="pl-c">     */</span>
+    <span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-smi">String</span> <span class="pl-en">getJobDetails</span>(<span class="pl-smi">String</span> <span class="pl-s1">jobId</span>) <span class="pl-k">throws</span> <span class="pl-smi">IOException</span>, <span class="pl-smi">InterruptedException</span> {
+        <span class="pl-c">// 构建请求URL</span>
+        <span class="pl-smi">String</span> <span class="pl-s1">url</span> = <span class="pl-smi">String</span>.<span class="pl-en">format</span>(<span class="pl-c1">BASE_URL</span>, <span class="pl-s1">jobId</span>);
+        <span class="pl-c">// 构建请求</span>
+        <span class="pl-smi">Request</span> <span class="pl-s1">request</span> = <span class="pl-k">new</span> <span class="pl-smi">Request</span>.<span class="pl-smi">Builder</span>()
+                .<span class="pl-en">url</span>(<span class="pl-s1">url</span>)
+                .<span class="pl-en">get</span>()
+                .<span class="pl-en">addHeader</span>(<span class="pl-c1">HEAD_ACCEPT</span>, <span class="pl-c1">HEAD_VALUE</span>)
+                .<span class="pl-en">addHeader</span>(<span class="pl-c1">HEADER_X_PRODIA_KEY</span>, <span class="pl-c1">API_KEY</span>)
+                .<span class="pl-en">build</span>();
+        <span class="pl-smi">boolean</span> <span class="pl-s1">isComplete</span> = <span class="pl-c1">false</span>;
+        <span class="pl-smi">String</span> <span class="pl-s1">imageUrl</span> = <span class="pl-c1">null</span>;
+        <span class="pl-c">// 开始轮询</span>
+        <span class="pl-k">while</span> (!<span class="pl-s1">isComplete</span>) {
+            <span class="pl-c">// 执行请求并处理响应</span>
+            <span class="pl-k">try</span> (<span class="pl-smi">Response</span> <span class="pl-s1">response</span> = <span class="pl-smi">CLIENT</span>.<span class="pl-en">newCall</span>(<span class="pl-s1">request</span>).<span class="pl-en">execute</span>()) {
+                <span class="pl-k">if</span> (<span class="pl-s1">response</span>.<span class="pl-en">isSuccessful</span>() &amp;&amp; <span class="pl-s1">response</span>.<span class="pl-en">body</span>() != <span class="pl-c1">null</span>) {
+                    <span class="pl-c">// 读取响应体内容</span>
+                    <span class="pl-smi">String</span> <span class="pl-s1">res</span> = <span class="pl-s1">response</span>.<span class="pl-en">body</span>().<span class="pl-en">string</span>();
+                    <span class="pl-smi">JSONObject</span> <span class="pl-s1">jsonObject</span> = <span class="pl-smi">JSONObject</span>.<span class="pl-en">parseObject</span>(<span class="pl-s1">res</span>);
+                    <span class="pl-smi">String</span> <span class="pl-s1">status</span> = <span class="pl-s1">jsonObject</span>.<span class="pl-en">getString</span>(<span class="pl-s">"status"</span>);
+                    <span class="pl-c">// 检查作业状态</span>
+                    <span class="pl-k">if</span> (<span class="pl-s">"succeeded"</span>.<span class="pl-en">equals</span>(<span class="pl-s1">status</span>)) {
+                        <span class="pl-s1">isComplete</span> = <span class="pl-c1">true</span>;
+                        <span class="pl-s1">imageUrl</span> = <span class="pl-s1">jsonObject</span>.<span class="pl-en">getString</span>(<span class="pl-s">"imageUrl"</span>);
+                    } <span class="pl-k">else</span> <span class="pl-k">if</span> (<span class="pl-s">"failed"</span>.<span class="pl-en">equals</span>(<span class="pl-s1">status</span>)) {
+                        <span class="pl-k">throw</span> <span class="pl-k">new</span> <span class="pl-smi">IOException</span>(<span class="pl-s">"Job failed: "</span> + <span class="pl-s1">jobId</span>);
+                    }
+                } <span class="pl-k">else</span> {
+                    <span class="pl-k">throw</span> <span class="pl-k">new</span> <span class="pl-smi">IOException</span>(<span class="pl-s">"Request failed: "</span> + <span class="pl-s1">response</span>.<span class="pl-en">code</span>() + <span class="pl-s">" "</span> + <span class="pl-s1">response</span>.<span class="pl-en">message</span>());
+                }
+            }
+            <span class="pl-k">if</span> (!<span class="pl-s1">isComplete</span>) {
+                <span class="pl-smi">Thread</span>.<span class="pl-en">sleep</span>(<span class="pl-c1">POLL_INTERVAL_MS</span>);
+            }
+        }
+        <span class="pl-k">return</span> <span class="pl-s1">imageUrl</span>;
+    }
+}</pre></div>
+<p><strong>第五步</strong></p>
+<p>配合前端vue使用</p>
+<p>前端代码我就直接粘贴了，就不多做解释了</p>
+<div class="highlight highlight-text-html-vue"><pre class="notranslate">&lt;<span class="pl-ent">template</span>&gt;
+  &lt;<span class="pl-ent">div</span> <span class="pl-e">id</span>=<span class="pl-s"><span class="pl-pds">"</span>app<span class="pl-pds">"</span></span>&gt;
+    &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>chat-container<span class="pl-pds">"</span></span> <span class="pl-e">style</span>=<span class="pl-s"><span class="pl-pds">"</span>height: 820px; max-width: 1350px<span class="pl-pds">"</span></span>&gt;
+      &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>selection<span class="pl-pds">"</span></span>&gt;
+        &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>container<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>settings2<span class="pl-pds">"</span></span> @<span class="pl-e">click</span>=<span class="pl-s1"><span class="pl-pds">"</span>chat<span class="pl-pds">"</span></span>&gt;&lt;<span class="pl-ent">span</span> <span class="pl-e">style</span>=<span class="pl-s"><span class="pl-pds">"</span>color: #c05ee7<span class="pl-pds">"</span></span>&gt;&lt;<span class="pl-ent">b</span>&gt;切换AI对话&lt;/<span class="pl-ent">b</span>&gt;&lt;/<span class="pl-ent">span</span>&gt;&lt;/<span class="pl-ent">div</span>&gt;
+          &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>settings2<span class="pl-pds">"</span></span> @<span class="pl-e">click</span>=<span class="pl-s1"><span class="pl-pds">"</span>newChat<span class="pl-pds">"</span></span>&gt;&lt;<span class="pl-ent">span</span> <span class="pl-e">style</span>=<span class="pl-s"><span class="pl-pds">"</span>color: #2f8099<span class="pl-pds">"</span></span>&gt;&lt;<span class="pl-ent">b</span>&gt;新版AI对话&lt;/<span class="pl-ent">b</span>&gt;&lt;/<span class="pl-ent">span</span>&gt;&lt;/<span class="pl-ent">div</span>&gt;
+        &lt;/<span class="pl-ent">div</span>&gt;
+        &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>container<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>settings2<span class="pl-pds">"</span></span> @<span class="pl-e">click</span>=<span class="pl-s1"><span class="pl-pds">"</span>Dalle3<span class="pl-pds">"</span></span>&gt;&lt;<span class="pl-ent">span</span> <span class="pl-e">style</span>=<span class="pl-s"><span class="pl-pds">"</span>color: #69a142<span class="pl-pds">"</span></span>&gt;&lt;<span class="pl-ent">b</span>&gt;切换D3绘画&lt;/<span class="pl-ent">b</span>&gt;&lt;/<span class="pl-ent">span</span>&gt;&lt;/<span class="pl-ent">div</span>&gt;
+          &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>settings2<span class="pl-pds">"</span></span> @<span class="pl-e">click</span>=<span class="pl-s1"><span class="pl-pds">"</span>Midj<span class="pl-pds">"</span></span>&gt;&lt;<span class="pl-ent">span</span> <span class="pl-e">style</span>=<span class="pl-s"><span class="pl-pds">"</span>color: #c65930<span class="pl-pds">"</span></span>&gt;&lt;<span class="pl-ent">b</span>&gt;切换MJ绘画&lt;/<span class="pl-ent">b</span>&gt;&lt;/<span class="pl-ent">span</span>&gt;&lt;/<span class="pl-ent">div</span>&gt;
+        &lt;/<span class="pl-ent">div</span>&gt;
+
+        &lt;<span class="pl-ent">h3</span>&gt;模型选择&lt;/<span class="pl-ent">h3</span>&gt;
+        &lt;<span class="pl-ent">el-select</span> <span class="pl-e">v-model</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">buildObject</span>.<span class="pl-smi">model</span><span class="pl-pds">"</span></span> <span class="pl-e">placeholder</span>=<span class="pl-s"><span class="pl-pds">"</span>请选择模型<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">el-option</span>
+              <span class="pl-e">v-for</span>=<span class="pl-s1"><span class="pl-pds">"</span>item <span class="pl-k">in</span> models<span class="pl-pds">"</span></span>
+              :<span class="pl-e">key</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">value</span><span class="pl-pds">"</span></span>
+              :<span class="pl-e">label</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">label</span><span class="pl-pds">"</span></span>
+              :<span class="pl-e">value</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">value</span><span class="pl-pds">"</span></span>&gt;
+          &lt;/<span class="pl-ent">el-option</span>&gt;
+        &lt;/<span class="pl-ent">el-select</span>&gt;
+
+        &lt;<span class="pl-ent">h3</span>&gt;样式预设&lt;/<span class="pl-ent">h3</span>&gt;
+        &lt;<span class="pl-ent">el-select</span> <span class="pl-e">v-model</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">buildObject</span>.<span class="pl-smi">style_preset</span><span class="pl-pds">"</span></span> <span class="pl-e">placeholder</span>=<span class="pl-s"><span class="pl-pds">"</span>请选择预设<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">el-option</span>
+              <span class="pl-e">v-for</span>=<span class="pl-s1"><span class="pl-pds">"</span>item <span class="pl-k">in</span> presets<span class="pl-pds">"</span></span>
+              :<span class="pl-e">key</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">value</span><span class="pl-pds">"</span></span>
+              :<span class="pl-e">label</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">label</span><span class="pl-pds">"</span></span>
+              :<span class="pl-e">value</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">value</span><span class="pl-pds">"</span></span>&gt;
+            &lt;<span class="pl-ent">span</span> <span class="pl-e">style</span>=<span class="pl-s"><span class="pl-pds">"</span>float: left<span class="pl-pds">"</span></span>&gt;{{ <span class="pl-smi">item</span>.<span class="pl-c1">label</span> }}&lt;/<span class="pl-ent">span</span>&gt;
+            &lt;<span class="pl-ent">span</span> <span class="pl-e">style</span>=<span class="pl-s"><span class="pl-pds">"</span>float: right; color: #8492a6; font-size: 13px<span class="pl-pds">"</span></span>&gt;{{ <span class="pl-smi">item</span>.<span class="pl-c1">value</span> }}&lt;/<span class="pl-ent">span</span>&gt;
+          &lt;/<span class="pl-ent">el-option</span>&gt;
+        &lt;/<span class="pl-ent">el-select</span>&gt;
+
+        &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>block<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">h3</span>&gt;steps 步骤&lt;/<span class="pl-ent">h3</span>&gt;
+          &lt;<span class="pl-ent">el-slider</span> <span class="pl-e">v-model</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">buildObject</span>.<span class="pl-smi">steps</span><span class="pl-pds">"</span></span> <span class="pl-e">style</span>=<span class="pl-s"><span class="pl-pds">"</span>width: 70%;margin-left: 15%<span class="pl-pds">"</span></span>&gt;&lt;/<span class="pl-ent">el-slider</span>&gt;
+        &lt;/<span class="pl-ent">div</span>&gt;
+
+        &lt;<span class="pl-ent">h3</span>&gt;采样器&lt;/<span class="pl-ent">h3</span>&gt;
+        &lt;<span class="pl-ent">el-select</span> <span class="pl-e">v-model</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">buildObject</span>.<span class="pl-smi">sampler</span><span class="pl-pds">"</span></span> <span class="pl-e">placeholder</span>=<span class="pl-s"><span class="pl-pds">"</span>请选择采样器<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">el-option</span>
+              <span class="pl-e">v-for</span>=<span class="pl-s1"><span class="pl-pds">"</span>item <span class="pl-k">in</span> samplers<span class="pl-pds">"</span></span>
+              :<span class="pl-e">key</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">value</span><span class="pl-pds">"</span></span>
+              :<span class="pl-e">label</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">label</span><span class="pl-pds">"</span></span>
+              :<span class="pl-e">value</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">value</span><span class="pl-pds">"</span></span>&gt;
+          &lt;/<span class="pl-ent">el-option</span>&gt;
+        &lt;/<span class="pl-ent">el-select</span>&gt;
+
+        &lt;<span class="pl-ent">el-tooltip</span> <span class="pl-e">placement</span>=<span class="pl-s"><span class="pl-pds">"</span>top<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">div</span> <span class="pl-e">slot</span>=<span class="pl-s"><span class="pl-pds">"</span>content<span class="pl-pds">"</span></span>&gt;为获得最佳性能，请使用以下分辨率之一&lt;<span class="pl-ent">br</span>/&gt;1024x1024、1152x896、1216x832、1344x768、1536x640、640x1536、768x1344、832x1216&lt;/<span class="pl-ent">div</span>&gt;
+          &lt;<span class="pl-ent">h3</span>&gt;图像宽度&lt;/<span class="pl-ent">h3</span>&gt;
+        &lt;/<span class="pl-ent">el-tooltip</span>&gt;
+        &lt;<span class="pl-ent">el-select</span> <span class="pl-e">v-model</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">buildObject</span>.<span class="pl-c1">width</span><span class="pl-pds">"</span></span> <span class="pl-e">placeholder</span>=<span class="pl-s"><span class="pl-pds">"</span>请选择图片宽度<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">el-option</span>
+              <span class="pl-e">v-for</span>=<span class="pl-s1"><span class="pl-pds">"</span>item <span class="pl-k">in</span> widths<span class="pl-pds">"</span></span>
+              :<span class="pl-e">key</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">value</span><span class="pl-pds">"</span></span>
+              :<span class="pl-e">label</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">label</span><span class="pl-pds">"</span></span>
+              :<span class="pl-e">value</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">value</span><span class="pl-pds">"</span></span>&gt;
+          &lt;/<span class="pl-ent">el-option</span>&gt;
+        &lt;/<span class="pl-ent">el-select</span>&gt;
+
+        &lt;<span class="pl-ent">el-tooltip</span> <span class="pl-e">placement</span>=<span class="pl-s"><span class="pl-pds">"</span>top<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">div</span> <span class="pl-e">slot</span>=<span class="pl-s"><span class="pl-pds">"</span>content<span class="pl-pds">"</span></span>&gt;为获得最佳性能，请使用以下分辨率之一&lt;<span class="pl-ent">br</span>/&gt;1024x1024、1152x896、1216x832、1344x768、1536x640、640x1536、768x1344、832x1216&lt;/<span class="pl-ent">div</span>&gt;
+          &lt;<span class="pl-ent">h3</span>&gt;图像高度&lt;/<span class="pl-ent">h3</span>&gt;
+        &lt;/<span class="pl-ent">el-tooltip</span>&gt;
+        &lt;<span class="pl-ent">el-select</span> <span class="pl-e">v-model</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">buildObject</span>.<span class="pl-c1">height</span><span class="pl-pds">"</span></span> <span class="pl-e">placeholder</span>=<span class="pl-s"><span class="pl-pds">"</span>请选择图片高度<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">el-option</span>
+              <span class="pl-e">v-for</span>=<span class="pl-s1"><span class="pl-pds">"</span>item <span class="pl-k">in</span> widths<span class="pl-pds">"</span></span>
+              :<span class="pl-e">key</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">value</span><span class="pl-pds">"</span></span>
+              :<span class="pl-e">label</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">label</span><span class="pl-pds">"</span></span>
+              :<span class="pl-e">value</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">item</span>.<span class="pl-c1">value</span><span class="pl-pds">"</span></span>&gt;
+          &lt;/<span class="pl-ent">el-option</span>&gt;
+        &lt;/<span class="pl-ent">el-select</span>&gt;
+
+
+
+
+      &lt;/<span class="pl-ent">div</span>&gt;
+
+      &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>chat-window<span class="pl-pds">"</span></span>&gt;
+        &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>chat-header<span class="pl-pds">"</span></span>&gt;
+          StableDiffusion绘画
+        &lt;/<span class="pl-ent">div</span>&gt;
+        &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>chat-messages<span class="pl-pds">"</span></span> <span class="pl-e">id</span>=<span class="pl-s"><span class="pl-pds">"</span>chatMessages<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">div</span> <span class="pl-e">v-for</span>=<span class="pl-s1"><span class="pl-pds">"</span>message <span class="pl-k">in</span> messages<span class="pl-pds">"</span></span> :<span class="pl-e">key</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">message</span>.<span class="pl-c1">id</span><span class="pl-pds">"</span></span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>message-row<span class="pl-pds">"</span></span>
+               :<span class="pl-e">class</span>=<span class="pl-s1"><span class="pl-pds">"</span>{ <span class="pl-s"><span class="pl-pds">'</span>user-row<span class="pl-pds">'</span></span><span class="pl-k">:</span> <span class="pl-smi">message</span>.<span class="pl-smi">is_user</span>, <span class="pl-s"><span class="pl-pds">'</span>system-row<span class="pl-pds">'</span></span><span class="pl-k">:</span> <span class="pl-k">!</span><span class="pl-smi">message</span>.<span class="pl-smi">is_user</span> }<span class="pl-pds">"</span></span>&gt;
+            <span class="pl-c"><span class="pl-c">&lt;!--</span> 系统消息头像 <span class="pl-c">--&gt;</span></span>
+            &lt;<span class="pl-ent">img</span> <span class="pl-e">v-if</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-k">!</span><span class="pl-smi">message</span>.<span class="pl-smi">is_user</span><span class="pl-pds">"</span></span> :<span class="pl-e">src</span>=<span class="pl-s1"><span class="pl-pds">"</span>system<span class="pl-pds">"</span></span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>avatar system-avatar<span class="pl-pds">"</span></span> <span class="pl-e">alt</span>=<span class="pl-s"><span class="pl-pds">"</span>System Avatar<span class="pl-pds">"</span></span>&gt;
+            <span class="pl-c"><span class="pl-c">&lt;!--</span> 消息内容 <span class="pl-c">--&gt;</span></span>
+            &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>message<span class="pl-pds">"</span></span> :<span class="pl-e">class</span>=<span class="pl-s1"><span class="pl-pds">"</span>{ <span class="pl-s"><span class="pl-pds">'</span>user-message<span class="pl-pds">'</span></span><span class="pl-k">:</span> <span class="pl-smi">message</span>.<span class="pl-smi">is_user</span>, <span class="pl-s"><span class="pl-pds">'</span>system-message<span class="pl-pds">'</span></span><span class="pl-k">:</span> <span class="pl-k">!</span><span class="pl-smi">message</span>.<span class="pl-smi">is_user</span> }<span class="pl-pds">"</span></span>&gt;
+              &lt;<span class="pl-ent">div</span> <span class="pl-e">v-if</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">message</span>.<span class="pl-smi">loading</span><span class="pl-pds">"</span></span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>loading-box<span class="pl-pds">"</span></span>&gt;
+                &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>loader<span class="pl-pds">"</span></span>&gt;&lt;/<span class="pl-ent">div</span>&gt; <span class="pl-c"><span class="pl-c">&lt;!--</span> 简单的加载动画 <span class="pl-c">--&gt;</span></span>
+              &lt;/<span class="pl-ent">div</span>&gt;
+              &lt;<span class="pl-ent">div</span> <span class="pl-e">v-else-if</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-c1">Array</span>.<span class="pl-en">isArray</span>(<span class="pl-smi">message</span>.<span class="pl-c1">content</span>)<span class="pl-pds">"</span></span>&gt;
+                &lt;<span class="pl-ent">div</span> <span class="pl-e">v-for</span>=<span class="pl-s1"><span class="pl-pds">"</span>(url, index) <span class="pl-k">in</span> <span class="pl-smi">message</span>.<span class="pl-c1">content</span><span class="pl-pds">"</span></span> :<span class="pl-e">key</span>=<span class="pl-s1"><span class="pl-pds">"</span>index<span class="pl-pds">"</span></span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>image-box<span class="pl-pds">"</span></span>&gt;
+<span class="pl-c"><span class="pl-c">&lt;!--</span>                  &lt;el-image<span class="pl-c">--&gt;</span></span>
+<span class="pl-c"><span class="pl-c">&lt;!--</span>                      style="width: 200px; height: 200px; margin: 5px;"<span class="pl-c">--&gt;</span></span>
+<span class="pl-c"><span class="pl-c">&lt;!--</span>                      :src="url"<span class="pl-c">--&gt;</span></span>
+<span class="pl-c"><span class="pl-c">&lt;!--</span>                      fit="cover"<span class="pl-c">--&gt;</span></span>
+<span class="pl-c"><span class="pl-c">&lt;!--</span>                      @click="handleImageClick(url)"<span class="pl-c">--&gt;</span></span>
+<span class="pl-c"><span class="pl-c">&lt;!--</span>                  &gt;&lt;/el-image&gt;<span class="pl-c">--&gt;</span></span>
+                  &lt;<span class="pl-ent">a</span> :<span class="pl-e">href</span>=<span class="pl-s1"><span class="pl-pds">"</span>url<span class="pl-pds">"</span></span> <span class="pl-e">target</span>=<span class="pl-s"><span class="pl-pds">"</span>_blank<span class="pl-pds">"</span></span>&gt;{{ url }}&lt;/<span class="pl-ent">a</span>&gt;
+                &lt;/<span class="pl-ent">div</span>&gt;
+              &lt;/<span class="pl-ent">div</span>&gt;
+              &lt;<span class="pl-ent">div</span> <span class="pl-e">v-else</span>&gt;
+                {{ <span class="pl-smi">message</span>.<span class="pl-c1">content</span> }}
+              &lt;/<span class="pl-ent">div</span>&gt;
+            &lt;/<span class="pl-ent">div</span>&gt;
+            <span class="pl-c"><span class="pl-c">&lt;!--</span> 用户消息头像 <span class="pl-c">--&gt;</span></span>
+            &lt;<span class="pl-ent">img</span> <span class="pl-e">v-if</span>=<span class="pl-s1"><span class="pl-pds">"</span><span class="pl-smi">message</span>.<span class="pl-smi">is_user</span><span class="pl-pds">"</span></span> :<span class="pl-e">src</span>=<span class="pl-s1"><span class="pl-pds">"</span>user<span class="pl-pds">"</span></span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>avatar user-avatar<span class="pl-pds">"</span></span> <span class="pl-e">alt</span>=<span class="pl-s"><span class="pl-pds">"</span>User Avatar<span class="pl-pds">"</span></span>&gt;
+          &lt;/<span class="pl-ent">div</span>&gt;
+        &lt;/<span class="pl-ent">div</span>&gt;
+        &lt;<span class="pl-ent">div</span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>chat-input<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">input</span> <span class="pl-e">type</span>=<span class="pl-s"><span class="pl-pds">"</span>text<span class="pl-pds">"</span></span> <span class="pl-e">v-model</span>=<span class="pl-s1"><span class="pl-pds">"</span>newMessage<span class="pl-pds">"</span></span> @<span class="pl-e">keydown</span>.<span class="pl-e">enter</span>=<span class="pl-s1"><span class="pl-pds">"</span>sendMessage<span class="pl-pds">"</span></span> <span class="pl-e">placeholder</span>=<span class="pl-s"><span class="pl-pds">"</span>请输入想要绘画的物体<span class="pl-pds">"</span></span>
+                 <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>input-message<span class="pl-pds">"</span></span>&gt;
+          &lt;<span class="pl-ent">button</span> @<span class="pl-e">click</span>=<span class="pl-s1"><span class="pl-pds">"</span>sendMessage<span class="pl-pds">"</span></span> <span class="pl-e">class</span>=<span class="pl-s"><span class="pl-pds">"</span>send-button<span class="pl-pds">"</span></span>&gt;发送&lt;/<span class="pl-ent">button</span>&gt;
+        &lt;/<span class="pl-ent">div</span>&gt;
+      &lt;/<span class="pl-ent">div</span>&gt;
+    &lt;/<span class="pl-ent">div</span>&gt;
+
+    &lt;<span class="pl-ent">el-dialog</span> :<span class="pl-e">visible</span>.<span class="pl-e">sync</span>=<span class="pl-s1"><span class="pl-pds">"</span>dialogVisible<span class="pl-pds">"</span></span>&gt;
+      &lt;<span class="pl-ent">el-image</span> :<span class="pl-e">src</span>=<span class="pl-s1"><span class="pl-pds">"</span>dialogImageUrl<span class="pl-pds">"</span></span> <span class="pl-e">style</span>=<span class="pl-s"><span class="pl-pds">"</span>width: 100%;<span class="pl-pds">"</span></span>&gt;&lt;/<span class="pl-ent">el-image</span>&gt;
+    &lt;/<span class="pl-ent">el-dialog</span>&gt;
+  &lt;/<span class="pl-ent">div</span>&gt;
+&lt;/<span class="pl-ent">template</span>&gt;
+
+<span class="pl-s1">&lt;<span class="pl-ent">script</span>&gt;</span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-k">export</span> <span class="pl-c1">default</span> {</span>
+<span class="pl-s1">  <span class="pl-en">data</span>() {</span>
+<span class="pl-s1">    <span class="pl-k">return</span> {</span>
+<span class="pl-s1">      system<span class="pl-k">:</span> <span class="pl-c1">require</span>(<span class="pl-s"><span class="pl-pds">'</span>@/assets/system.png<span class="pl-pds">'</span></span>),</span>
+<span class="pl-s1">      user<span class="pl-k">:</span> <span class="pl-c1">require</span>(<span class="pl-s"><span class="pl-pds">'</span>@/assets/user.png<span class="pl-pds">'</span></span>),</span>
+<span class="pl-s1">      newMessage<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span><span class="pl-pds">'</span></span>,</span>
+<span class="pl-s1">      messages<span class="pl-k">:</span> [],</span>
+<span class="pl-s1">      nextMessageId<span class="pl-k">:</span> <span class="pl-c1">1</span>,</span>
+<span class="pl-s1">      loading<span class="pl-k">:</span> <span class="pl-c1">false</span>, <span class="pl-c"><span class="pl-c">//</span> 用于跟踪图片加载状态</span></span>
+<span class="pl-s1">      imageUrls<span class="pl-k">:</span> [], <span class="pl-c"><span class="pl-c">//</span> 用于存储从服务器响应获得的图片链接</span></span>
+<span class="pl-s1">      dialogImageUrl<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span><span class="pl-pds">'</span></span>, <span class="pl-c"><span class="pl-c">//</span> 当前点击的图片的URL</span></span>
+<span class="pl-s1">      dialogVisible<span class="pl-k">:</span> <span class="pl-c1">false</span>, <span class="pl-c"><span class="pl-c">//</span> 控制模态框的显示</span></span>
+<span class="pl-s1"></span>
+<span class="pl-s1"></span>
+<span class="pl-s1">      models<span class="pl-k">:</span> [{</span>
+<span class="pl-s1">        value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>dreamshaperXL10_alpha2.safetensors [c8afe2ef]<span class="pl-pds">'</span></span>,</span>
+<span class="pl-s1">        label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>dreamshaperXL10_alpha2.safetensors [c8afe2ef]<span class="pl-pds">'</span></span></span>
+<span class="pl-s1">      }, {</span>
+<span class="pl-s1">        value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>dynavisionXL_0411.safetensors [c39cc051]<span class="pl-pds">'</span></span>,</span>
+<span class="pl-s1">        label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>dynavisionXL_0411.safetensors [c39cc051]<span class="pl-pds">'</span></span></span>
+<span class="pl-s1">      }, {</span>
+<span class="pl-s1">        value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>juggernautXL_v45.safetensors [e75f5471]<span class="pl-pds">'</span></span>,</span>
+<span class="pl-s1">        label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>juggernautXL_v45.safetensors [e75f5471]<span class="pl-pds">'</span></span></span>
+<span class="pl-s1">      }, {</span>
+<span class="pl-s1">        value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>realismEngineSDXL_v10.safetensors [af771c3f]<span class="pl-pds">'</span></span>,</span>
+<span class="pl-s1">        label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>realismEngineSDXL_v10.safetensors [af771c3f]<span class="pl-pds">'</span></span></span>
+<span class="pl-s1">      }, {</span>
+<span class="pl-s1">        value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>sd_xl_base_1.0.safetensors [be9edd61]<span class="pl-pds">'</span></span>,</span>
+<span class="pl-s1">        label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>sd_xl_base_1.0.safetensors [be9edd61]<span class="pl-pds">'</span></span></span>
+<span class="pl-s1">      },],</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">      presets<span class="pl-k">:</span> [ { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>3d-model<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>3D模型<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>analog-film<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>胶片<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>anime<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>动漫<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>cinematic<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>电影化的<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>comic-book<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>漫画书<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>digital-art<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>数字艺术<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>enhance<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>增强<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>fantasy-art<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>奇幻艺术<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>isometric<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>等轴测<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>line-art<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>线描<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>low-poly<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>低多边形<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>neon-punk<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>霓虹朋克<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>origami<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>折纸<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>photographic<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>摄影的<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>pixel-art<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>像素艺术<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>texture<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>纹理<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>craft-clay<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>手工陶土<span class="pl-pds">'</span></span> }],</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">      samplers<span class="pl-k">:</span>[</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>Euler<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>Euler<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>Euler_a<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>Euler a<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>LMS<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>LMS<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>Heun<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>Heun<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2_a<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2 a<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2S_a<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM++ 2S a<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2M<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM++ 2M<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPMSDE<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM++ SDE<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM_fast<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM fast<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM_adaptive<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM adaptive<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>LMS_Karras<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>LMS Karras<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2_Karras<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2 Karras<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2_a_Karras<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2 a Karras<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2S_a_Karras<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM++ 2S a Karras<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM2M_Karras<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM++ 2M Karras<span class="pl-pds">'</span></span> },</span>
+<span class="pl-s1">        { value<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPMSDE_Karras<span class="pl-pds">'</span></span>, label<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>DPM++ SDE Karras<span class="pl-pds">'</span></span> }</span>
+<span class="pl-s1">      ],</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">      widths<span class="pl-k">:</span>[</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1024<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1024<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1152<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1152<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1216<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1216<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1344<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1344<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1536<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1536<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>640<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>640<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>768<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>768<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>832<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>832<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">      ],</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">      heights<span class="pl-k">:</span>[</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1024<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1024<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>896<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>896<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>832<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>832<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>768<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>768<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>640<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>640<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1536<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1536<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1344<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1344<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">        {label<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1216<span class="pl-pds">"</span></span>,value<span class="pl-k">:</span><span class="pl-s"><span class="pl-pds">"</span>1216<span class="pl-pds">"</span></span>},</span>
+<span class="pl-s1">      ],</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">        buildObject<span class="pl-k">:</span> {</span>
+<span class="pl-s1">          model<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">"</span>sd_xl_base_1.0.safetensors [be9edd61]<span class="pl-pds">"</span></span>,</span>
+<span class="pl-s1">          prompt<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">"</span><span class="pl-pds">"</span></span>,</span>
+<span class="pl-s1">          negative_prompt<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">"</span>badly drawn<span class="pl-pds">"</span></span>,</span>
+<span class="pl-s1">          style_preset<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">"</span>analog-film<span class="pl-pds">"</span></span>,</span>
+<span class="pl-s1">          steps<span class="pl-k">:</span> <span class="pl-c1">25</span>,</span>
+<span class="pl-s1">          cfg_scale<span class="pl-k">:</span> <span class="pl-c1">7</span>,</span>
+<span class="pl-s1">          seed<span class="pl-k">:</span> <span class="pl-k">-</span><span class="pl-c1">1</span>,</span>
+<span class="pl-s1">          sampler<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">"</span>DPM++ 2M Karras<span class="pl-pds">"</span></span>,</span>
+<span class="pl-s1">          width<span class="pl-k">:</span> <span class="pl-c1">1024</span>,</span>
+<span class="pl-s1">          height<span class="pl-k">:</span> <span class="pl-c1">1024</span></span>
+<span class="pl-s1">        }</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">    };</span>
+<span class="pl-s1">  },</span>
+<span class="pl-s1">  <span class="pl-en">created</span>() {</span>
+<span class="pl-s1">    <span class="pl-c1">this</span>.<span class="pl-smi">messages</span>.<span class="pl-c1">push</span>({</span>
+<span class="pl-s1">      loading<span class="pl-k">:</span> <span class="pl-c1">false</span>,</span>
+<span class="pl-s1">      is_user<span class="pl-k">:</span> <span class="pl-c1">false</span>,</span>
+<span class="pl-s1">      id<span class="pl-k">:</span> <span class="pl-c1">this</span>.<span class="pl-smi">nextMessageId</span><span class="pl-k">++</span>,</span>
+<span class="pl-s1">      content<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>请描述你想要的图片，怕你们搞黄，请自行在浏览器打开<span class="pl-pds">'</span></span>,</span>
+<span class="pl-s1">    });</span>
+<span class="pl-s1">    <span class="pl-c1">this</span>.<span class="pl-smi">messages</span>.<span class="pl-c1">push</span>({</span>
+<span class="pl-s1">      loading<span class="pl-k">:</span> <span class="pl-c1">false</span>,</span>
+<span class="pl-s1">      is_user<span class="pl-k">:</span> <span class="pl-c1">false</span>,</span>
+<span class="pl-s1">      id<span class="pl-k">:</span> <span class="pl-c1">this</span>.<span class="pl-smi">nextMessageId</span><span class="pl-k">++</span>,</span>
+<span class="pl-s1">      content<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span>最好更改所需要的样式预设哦，默认是胶片，胶片图片质量好，但是加载慢。<span class="pl-pds">'</span></span>,</span>
+<span class="pl-s1">    });</span>
+<span class="pl-s1">  },</span>
+<span class="pl-s1">  methods<span class="pl-k">:</span> {</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">    <span class="pl-en">Dalle3</span>(){</span>
+<span class="pl-s1">      <span class="pl-c1">this</span>.<span class="pl-smi">$router</span>.<span class="pl-c1">push</span>(<span class="pl-s"><span class="pl-pds">'</span>/DallThree<span class="pl-pds">'</span></span>);</span>
+<span class="pl-s1">    },</span>
+<span class="pl-s1">    <span class="pl-en">Midj</span>(){</span>
+<span class="pl-s1">      <span class="pl-c1">this</span>.<span class="pl-smi">$router</span>.<span class="pl-c1">push</span>(<span class="pl-s"><span class="pl-pds">'</span>/DrawMidjourney<span class="pl-pds">'</span></span>);</span>
+<span class="pl-s1">    },</span>
+<span class="pl-s1">    <span class="pl-en">chat</span>(){</span>
+<span class="pl-s1">      <span class="pl-c1">this</span>.<span class="pl-smi">$router</span>.<span class="pl-c1">push</span>(<span class="pl-s"><span class="pl-pds">'</span>/ChatGPTALL<span class="pl-pds">'</span></span>);</span>
+<span class="pl-s1">    },</span>
+<span class="pl-s1">    <span class="pl-en">newChat</span>(){</span>
+<span class="pl-s1">      <span class="pl-c1">window</span>.<span class="pl-c1">location</span>.<span class="pl-c1">href</span> <span class="pl-k">=</span> <span class="pl-s"><span class="pl-pds">'</span>https://gpt.xlike.top/#/<span class="pl-pds">'</span></span>;</span>
+<span class="pl-s1">    },</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">    <span class="pl-en">handleImageClick</span>(<span class="pl-smi">url</span>) {</span>
+<span class="pl-s1">      <span class="pl-c1">this</span>.<span class="pl-smi">dialogImageUrl</span> <span class="pl-k">=</span> url; <span class="pl-c"><span class="pl-c">//</span> 设置当前的图片URL</span></span>
+<span class="pl-s1">      <span class="pl-c1">this</span>.<span class="pl-smi">dialogVisible</span> <span class="pl-k">=</span> <span class="pl-c1">true</span>; <span class="pl-c"><span class="pl-c">//</span> 显示模态框</span></span>
+<span class="pl-s1">    },</span>
+<span class="pl-s1">    <span class="pl-en">sendMessage</span>() {</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">      <span class="pl-c1">this</span>.<span class="pl-smi">buildObject</span>.<span class="pl-c1">prompt</span> <span class="pl-k">=</span> <span class="pl-c1">this</span>.<span class="pl-smi">newMessage</span>;</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">      <span class="pl-k">if</span> (<span class="pl-c1">this</span>.<span class="pl-smi">newMessage</span>.<span class="pl-en">trim</span>() <span class="pl-k">!==</span> <span class="pl-s"><span class="pl-pds">'</span><span class="pl-pds">'</span></span>) {</span>
+<span class="pl-s1">        <span class="pl-k">const</span> <span class="pl-c1">userMessageContent</span> <span class="pl-k">=</span> <span class="pl-c1">this</span>.<span class="pl-smi">newMessage</span>.<span class="pl-en">trim</span>();</span>
+<span class="pl-s1">        <span class="pl-c1">this</span>.<span class="pl-smi">messages</span>.<span class="pl-c1">push</span>({</span>
+<span class="pl-s1">          id<span class="pl-k">:</span> <span class="pl-c1">this</span>.<span class="pl-smi">nextMessageId</span><span class="pl-k">++</span>,</span>
+<span class="pl-s1">          content<span class="pl-k">:</span> userMessageContent,</span>
+<span class="pl-s1">          is_user<span class="pl-k">:</span> <span class="pl-c1">true</span></span>
+<span class="pl-s1">        });</span>
+<span class="pl-s1">        <span class="pl-c"><span class="pl-c">//</span> 添加一个加载中的消息</span></span>
+<span class="pl-s1">        <span class="pl-k">const</span> <span class="pl-c1">loadingMessageId</span> <span class="pl-k">=</span> <span class="pl-c1">this</span>.<span class="pl-smi">nextMessageId</span><span class="pl-k">++</span>;</span>
+<span class="pl-s1">        <span class="pl-c1">this</span>.<span class="pl-smi">messages</span>.<span class="pl-c1">push</span>({</span>
+<span class="pl-s1">          id<span class="pl-k">:</span> loadingMessageId,</span>
+<span class="pl-s1">          content<span class="pl-k">:</span> <span class="pl-s"><span class="pl-pds">'</span><span class="pl-pds">'</span></span>,</span>
+<span class="pl-s1">          is_user<span class="pl-k">:</span> <span class="pl-c1">false</span>,</span>
+<span class="pl-s1">          loading<span class="pl-k">:</span> <span class="pl-c1">true</span></span>
+<span class="pl-s1">        });</span>
+<span class="pl-s1">        <span class="pl-c"><span class="pl-c">//</span> 清空输入框</span></span>
+<span class="pl-s1">        <span class="pl-c1">this</span>.<span class="pl-smi">newMessage</span> <span class="pl-k">=</span> <span class="pl-s"><span class="pl-pds">'</span><span class="pl-pds">'</span></span>;</span>
+<span class="pl-s1">        <span class="pl-c"><span class="pl-c">//</span> 发送POST请求</span></span>
+<span class="pl-s1"></span>
+<span class="pl-s1">        <span class="pl-k">let</span> jsonPayload <span class="pl-k">=</span> <span class="pl-c1">JSON</span>.<span class="pl-c1">stringify</span>(<span class="pl-c1">this</span>.<span class="pl-smi">buildObject</span>);</span>
+<span class="pl-s1">        <span class="pl-c1">this</span>.<span class="pl-smi">$http</span>.<span class="pl-en">post</span>(<span class="pl-s"><span class="pl-pds">"</span>/draw/stableDraw<span class="pl-pds">"</span></span>, {prompt<span class="pl-k">:</span> jsonPayload}).<span class="pl-c1">then</span>(<span class="pl-smi">response</span> <span class="pl-k">=&gt;</span> {</span>
+<span class="pl-s1">          <span class="pl-k">const</span> <span class="pl-c1">imageUrlList</span> <span class="pl-k">=</span> <span class="pl-smi">response</span>.<span class="pl-c1">data</span>; <span class="pl-c"><span class="pl-c">//</span> 根据您的实际响应结构调整这里的路径</span></span>
+<span class="pl-s1">          <span class="pl-c"><span class="pl-c">//</span> 更新消息，替换“加载中”消息为图片消息</span></span>
+<span class="pl-s1">          <span class="pl-c1">this</span>.<span class="pl-smi">messages</span> <span class="pl-k">=</span> <span class="pl-c1">this</span>.<span class="pl-smi">messages</span>.<span class="pl-en">map</span>(<span class="pl-smi">message</span> <span class="pl-k">=&gt;</span> {</span>
+<span class="pl-s1">            <span class="pl-k">if</span> (<span class="pl-smi">message</span>.<span class="pl-c1">id</span> <span class="pl-k">===</span> loadingMessageId) {</span>
+<span class="pl-s1">              <span class="pl-k">return</span> {</span>
+<span class="pl-s1">                <span class="pl-k">...</span>message,</span>
+<span class="pl-s1">                content<span class="pl-k">:</span> imageUrlList,</span>
+<span class="pl-s1">                loading<span class="pl-k">:</span> <span class="pl-c1">false</span></span>
+<span class="pl-s1">              };</span>
+<span class="pl-s1">            }</span>
+<span class="pl-s1">            <span class="pl-k">return</span> message;</span>
+<span class="pl-s1">          });</span>
+<span class="pl-s1">        }).<span class="pl-c1">catch</span>(<span class="pl-smi">error</span> <span class="pl-k">=&gt;</span> {</span>
+<span class="pl-s1">          <span class="pl-en">console</span>.<span class="pl-c1">error</span>(<span class="pl-s"><span class="pl-pds">"</span>There was an error!<span class="pl-pds">"</span></span>, error);</span>
+<span class="pl-s1">          <span class="pl-c"><span class="pl-c">//</span> 处理错误情况，例如移除加载消息，显示错误提示等</span></span>
+<span class="pl-s1">        });</span>
+<span class="pl-s1">      }</span>
+<span class="pl-s1">    }</span>
+<span class="pl-s1">  }</span>
+<span class="pl-s1">};</span>
+<span class="pl-s1">&lt;/<span class="pl-ent">script</span>&gt;</span>
+
+<span class="pl-s1">&lt;<span class="pl-ent">style</span>&gt;</span>
+<span class="pl-s1"><span class="pl-c"><span class="pl-c">/*</span> ...之前的样式不变... <span class="pl-c">*/</span></span></span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-c"><span class="pl-c">/*</span> 修改了消息行的样式 <span class="pl-c">*/</span></span></span>
+<span class="pl-s1"><span class="pl-e">.message-row</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">display</span></span>: <span class="pl-c1">flex</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">align-items</span></span>: <span class="pl-c1">center</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">margin-bottom</span></span>: <span class="pl-c1">10<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-e">.system-row</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">justify-content</span></span>: <span class="pl-c1">flex-start</span>; <span class="pl-c"><span class="pl-c">/*</span> 系统消息靠左 <span class="pl-c">*/</span></span></span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-e">.user-row</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">justify-content</span></span>: <span class="pl-c1">flex-end</span>; <span class="pl-c"><span class="pl-c">/*</span> 用户消息靠右 <span class="pl-c">*/</span></span></span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-e">.message</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">max-width</span></span>: <span class="pl-c1">60<span class="pl-k">%</span></span>; <span class="pl-c"><span class="pl-c">/*</span> 最大宽度，防止内容过少时过宽 <span class="pl-c">*/</span></span></span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">padding</span></span>: <span class="pl-c1">10<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">border-radius</span></span>: <span class="pl-c1">15<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">margin-bottom</span></span>: <span class="pl-c1">10<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-e">.user-message</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">background-color</span></span>: <span class="pl-c1">#007bff</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">color</span></span>: <span class="pl-c1">white</span>;</span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-e">.system-message</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">background-color</span></span>: <span class="pl-c1">#f0f0f0</span>;</span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-e">.avatar</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">width</span></span>: <span class="pl-c1">40<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">height</span></span>: <span class="pl-c1">40<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">border-radius</span></span>: <span class="pl-c1">50<span class="pl-k">%</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">object-fit</span></span>: <span class="pl-c1">cover</span>;</span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-e">.system-avatar</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">margin-right</span></span>: <span class="pl-c1">10<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-e">.user-avatar</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">margin-left</span></span>: <span class="pl-c1">10<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"></span>
+<span class="pl-s1"><span class="pl-e">.selection</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">width</span></span>: <span class="pl-c1">300<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"><span class="pl-e">.settings</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">width</span></span>: <span class="pl-c1">85<span class="pl-k">%</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">display</span></span>: <span class="pl-c1">flex</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">justify-content</span></span>: <span class="pl-c1">center</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">align-items</span></span>: <span class="pl-c1">center</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">height</span></span>: <span class="pl-c1">50<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">background-color</span></span>: <span class="pl-c1">#f2f2f2</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">border</span></span>: <span class="pl-c1">1<span class="pl-k">px</span></span> <span class="pl-c1">solid</span> <span class="pl-c1">#dcdcdc</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">border-radius</span></span>: <span class="pl-c1">10<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">box-shadow</span></span>: <span class="pl-c1">0</span> <span class="pl-c1">4<span class="pl-k">px</span></span> <span class="pl-c1">8<span class="pl-k">px</span></span> <span class="pl-c1">0</span> <span class="pl-c1">rgba</span>(<span class="pl-c1">0</span>,<span class="pl-c1">0</span>,<span class="pl-c1">0</span>,<span class="pl-c1">0.2</span>);</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">padding</span></span>: <span class="pl-c1">5<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">font-size</span></span>: <span class="pl-c1">18<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">color</span></span>: <span class="pl-c1">#333</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">text-shadow</span></span>: <span class="pl-c1">0</span> <span class="pl-c1">1<span class="pl-k">px</span></span> <span class="pl-c1">0</span> <span class="pl-c1">#fff</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">margin-top</span></span>: <span class="pl-c1">20<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">margin-left</span></span>: <span class="pl-c1">6<span class="pl-k">%</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">cursor</span></span>: <span class="pl-c1">pointer</span>;</span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"><span class="pl-e">.container</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">display</span></span>: <span class="pl-c1">flex</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">justify-content</span></span>: <span class="pl-c1">center</span>; <span class="pl-c"><span class="pl-c">/*</span> 水平居中 <span class="pl-c">*/</span></span></span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">align-items</span></span>: <span class="pl-c1">center</span>; <span class="pl-c"><span class="pl-c">/*</span> 垂直居中 <span class="pl-c">*/</span></span></span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"><span class="pl-e">.settings2</span> {</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">width</span></span>: <span class="pl-c1">39<span class="pl-k">%</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">display</span></span>: <span class="pl-c1">flex</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">justify-content</span></span>: <span class="pl-c1">center</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">align-items</span></span>: <span class="pl-c1">center</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">height</span></span>: <span class="pl-c1">50<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">background-color</span></span>: <span class="pl-c1">#f2f2f2</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">border</span></span>: <span class="pl-c1">1<span class="pl-k">px</span></span> <span class="pl-c1">solid</span> <span class="pl-c1">#dcdcdc</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">border-radius</span></span>: <span class="pl-c1">10<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">box-shadow</span></span>: <span class="pl-c1">0</span> <span class="pl-c1">4<span class="pl-k">px</span></span> <span class="pl-c1">8<span class="pl-k">px</span></span> <span class="pl-c1">0</span> <span class="pl-c1">rgba</span>(<span class="pl-c1">0</span>,<span class="pl-c1">0</span>,<span class="pl-c1">0</span>,<span class="pl-c1">0.2</span>);</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">padding</span></span>: <span class="pl-c1">5<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">font-size</span></span>: <span class="pl-c1">18<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">color</span></span>: <span class="pl-c1">#333</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">text-shadow</span></span>: <span class="pl-c1">0</span> <span class="pl-c1">1<span class="pl-k">px</span></span> <span class="pl-c1">0</span> <span class="pl-c1">#fff</span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">margin-top</span></span>: <span class="pl-c1">20<span class="pl-k">px</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">margin-left</span></span>: <span class="pl-c1">3<span class="pl-k">%</span></span>;</span>
+<span class="pl-s1">  <span class="pl-c1"><span class="pl-c1">cursor</span></span>: <span class="pl-c1">pointer</span>;</span>
+<span class="pl-s1">}</span>
+<span class="pl-s1"></span>
+<span class="pl-s1">&lt;/<span class="pl-ent">style</span>&gt;</span></pre></div></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+</div>
+    <div id="footer">Copyright © <span id="year"></span><a href="https://xliking.github.io"> 木池 </a>
+<p>
+<span id="runday"></span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a>
+</p>
+
+<script>
+if(""!=""){
+    var now=new Date();
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("year").innerHTML=now.getFullYear();
+    if(""!=""){document.getElementById("runday").innerHTML=" • "+"网站运行"+diffDay+"天"+" • ";}
+    else{document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";}
+}
+</script>
+</div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n\n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","xliking/xliking.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+</script>
+
+
+</html>
