@@ -222,7 +222,7 @@ Request request = new Request.Builder()
 <meta property="og:url" content="https://xliking.github.io/post/SpringBoot-fen-xiang-yi-ge-jian-dan-de-ni-xiang.html">
 <meta property="og:image" content="https://xlike.email/images/tx.jpg">
 <title>SpringBoot分享一个简单的逆向</title>
-
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
 
 </head>
 <style>
@@ -278,17 +278,16 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
     <div id="content">
 <div class="markdown-body" id="postBody"><p>好处是，可以绕开前端已经写死的参数或者规定，交给我们自己去按照格式组装参数，达到我们想要的目的</p>
 <p>导入Maven依赖，离不开okhttp和json工具包</p>
-<pre lang="JAVA" class="notranslate"><code class="notranslate">&lt;dependency&gt;
-    &lt;groupId&gt;com.alibaba.fastjson2&lt;/groupId&gt;
-    &lt;artifactId&gt;fastjson2&lt;/artifactId&gt;
-    &lt;version&gt;2.0.40&lt;/version&gt;
-&lt;/dependency&gt;
-&lt;dependency&gt;
-    &lt;groupId&gt;com.squareup.okhttp3&lt;/groupId&gt;
-    &lt;artifactId&gt;okhttp&lt;/artifactId&gt;
-    &lt;version&gt;4.9.1&lt;/version&gt;
-&lt;/dependency&gt;
-</code></pre>
+<div class="highlight highlight-source-java"><pre class="notranslate">&lt;<span class="pl-s1">dependency</span>&gt;
+    &lt;<span class="pl-s1">groupId</span>&gt;<span class="pl-smi">com</span>.<span class="pl-smi">alibaba</span>.<span class="pl-smi">fastjson2</span>&lt;/<span class="pl-smi">groupId</span>&gt;
+    &lt;<span class="pl-s1">artifactId</span>&gt;<span class="pl-s1">fastjson2</span>&lt;/<span class="pl-s1">artifactId</span>&gt;
+    &lt;<span class="pl-s1">version</span>&gt;<span class="pl-c1">2.0</span>.<span class="pl-c1">40</span>&lt;/<span class="pl-smi">version</span>&gt;
+&lt;/<span class="pl-s1">dependency</span>&gt;
+&lt;<span class="pl-s1">dependency</span>&gt;
+    &lt;<span class="pl-s1">groupId</span>&gt;<span class="pl-smi">com</span>.<span class="pl-smi">squareup</span>.<span class="pl-smi">okhttp3</span>&lt;/<span class="pl-smi">groupId</span>&gt;
+    &lt;<span class="pl-s1">artifactId</span>&gt;<span class="pl-s1">okhttp</span>&lt;/<span class="pl-s1">artifactId</span>&gt;
+    &lt;<span class="pl-s1">version</span>&gt;<span class="pl-c1">4.9</span>.<span class="pl-c1">1</span>&lt;/<span class="pl-smi">version</span>&gt;
+&lt;/<span class="pl-s1">dependency</span>&gt;</pre></div>
 <p><strong>第一步</strong></p>
 <p>首先打开一个网站，以这个网站 <a href="https://twoapi-ui.qiangtu.com/" rel="nofollow">https://twoapi-ui.qiangtu.com/</a> 为例</p>
 <p>点击对话，来到对话窗口，右键点击 <strong>检查</strong>，来到<strong>NetWork</strong>，选中，<strong>Fetch/xhr</strong></p>
@@ -300,60 +299,56 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <p><strong>第二步</strong></p>
 <p>因为是post请求，他的参数都在<strong>payload</strong>中</p>
 <p>我们进去之后，找到他的请求体</p>
-<pre lang="json" class="notranslate"><code class="notranslate">{
-  "messages": [
+<div class="highlight highlight-source-json"><pre class="notranslate">{
+  <span class="pl-ent">"messages"</span>: [
     {
-      "role": "system",
-      "content": "你是强大的智谱AI，快来帮助解决我的问题吧"
+      <span class="pl-ent">"role"</span>: <span class="pl-s"><span class="pl-pds">"</span>system<span class="pl-pds">"</span></span>,
+      <span class="pl-ent">"content"</span>: <span class="pl-s"><span class="pl-pds">"</span>你是强大的智谱AI，快来帮助解决我的问题吧<span class="pl-pds">"</span></span>
     },
     {
-      "role": "user",
-      "content": "1"
+      <span class="pl-ent">"role"</span>: <span class="pl-s"><span class="pl-pds">"</span>user<span class="pl-pds">"</span></span>,
+      <span class="pl-ent">"content"</span>: <span class="pl-s"><span class="pl-pds">"</span>1<span class="pl-pds">"</span></span>
     }
   ],
-  "stream": true,
-  "model": "gpt-3.5-turbo-1106",
-  "temperature": 0.5,
-  "presence_penalty": 0,
-  "frequency_penalty": 0,
-  "top_p": 1
-}
-</code></pre>
+  <span class="pl-ent">"stream"</span>: <span class="pl-c1">true</span>,
+  <span class="pl-ent">"model"</span>: <span class="pl-s"><span class="pl-pds">"</span>gpt-3.5-turbo-1106<span class="pl-pds">"</span></span>,
+  <span class="pl-ent">"temperature"</span>: <span class="pl-c1">0.5</span>,
+  <span class="pl-ent">"presence_penalty"</span>: <span class="pl-c1">0</span>,
+  <span class="pl-ent">"frequency_penalty"</span>: <span class="pl-c1">0</span>,
+  <span class="pl-ent">"top_p"</span>: <span class="pl-c1">1</span>
+}</pre></div>
 <p>然后就到了java代码环节</p>
-<pre lang="java" class="notranslate"><code class="notranslate">//我们就要定义他们的请求路径，和 找到的Authorization(就是API_KEY)
-private static final Integer TIMEOUT_MAX = 5;
-private static final String API_URL = "https://twoapi-ui.qiangtu.com/v1/chat/completions";
-private static final String API_KEY = "sk-1e49426A5A63Ee3C33256F17EF152C02";
-private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-c">//我们就要定义他们的请求路径，和 找到的Authorization(就是API_KEY)</span>
+<span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">Integer</span> <span class="pl-c1">TIMEOUT_MAX</span> = <span class="pl-c1">5</span>;
+<span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">String</span> <span class="pl-c1">API_URL</span> = <span class="pl-s">"https://twoapi-ui.qiangtu.com/v1/chat/completions"</span>;
+<span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">String</span> <span class="pl-c1">API_KEY</span> = <span class="pl-s">"sk-1e49426A5A63Ee3C33256F17EF152C02"</span>;
+<span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">MediaType</span> <span class="pl-c1">JSON_MEDIA_TYPE</span> = <span class="pl-smi">MediaType</span>.<span class="pl-en">get</span>(<span class="pl-s">"application/json; charset=utf-8"</span>);
 
-private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
-        .callTimeout(TIMEOUT_MAX, TimeUnit.MINUTES)
-        .readTimeout(TIMEOUT_MAX, TimeUnit.MINUTES)
-        .build();
-</code></pre>
+<span class="pl-k">private</span> <span class="pl-k">static</span> <span class="pl-k">final</span> <span class="pl-smi">OkHttpClient</span> <span class="pl-c1">CLIENT</span> = <span class="pl-k">new</span> <span class="pl-smi">OkHttpClient</span>.<span class="pl-smi">Builder</span>()
+        .<span class="pl-en">callTimeout</span>(<span class="pl-c1">TIMEOUT_MAX</span>, <span class="pl-smi">TimeUnit</span>.<span class="pl-c1">MINUTES</span>)
+        .<span class="pl-en">readTimeout</span>(<span class="pl-c1">TIMEOUT_MAX</span>, <span class="pl-smi">TimeUnit</span>.<span class="pl-c1">MINUTES</span>)
+        .<span class="pl-en">build</span>();</pre></div>
 <p>构建请求体，我一般都是用的JSONObject<br>
 我这个只是实例并不完整</p>
-<pre lang="java" class="notranslate"><code class="notranslate">JSONObject jsonBody = new JSONObject();
-jsonBody.put("stream", false);
-  JSONArray messages = new JSONArray();
-        messages.add(new JSONObject().fluentPut("role", "system").fluentPut("content", "[midjourney] 根据要求绘图"));
-        messages.add(new JSONObject().fluentPut("role", "user").fluentPut("content", prompt));
-        jsonBody.put("messages", messages);
-RequestBody body = RequestBody.create(JSON_MEDIA_TYPE, jsonBody.toJSONString());
-</code></pre>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">JSONObject</span> <span class="pl-s1">jsonBody</span> = <span class="pl-k">new</span> <span class="pl-smi">JSONObject</span>();
+<span class="pl-s1">jsonBody</span>.<span class="pl-en">put</span>(<span class="pl-s">"stream"</span>, <span class="pl-c1">false</span>);
+  <span class="pl-smi">JSONArray</span> <span class="pl-s1">messages</span> = <span class="pl-k">new</span> <span class="pl-smi">JSONArray</span>();
+        <span class="pl-s1">messages</span>.<span class="pl-en">add</span>(<span class="pl-k">new</span> <span class="pl-smi">JSONObject</span>().<span class="pl-en">fluentPut</span>(<span class="pl-s">"role"</span>, <span class="pl-s">"system"</span>).<span class="pl-en">fluentPut</span>(<span class="pl-s">"content"</span>, <span class="pl-s">"[midjourney] 根据要求绘图"</span>));
+        <span class="pl-s1">messages</span>.<span class="pl-en">add</span>(<span class="pl-k">new</span> <span class="pl-smi">JSONObject</span>().<span class="pl-en">fluentPut</span>(<span class="pl-s">"role"</span>, <span class="pl-s">"user"</span>).<span class="pl-en">fluentPut</span>(<span class="pl-s">"content"</span>, <span class="pl-s1">prompt</span>));
+        <span class="pl-s1">jsonBody</span>.<span class="pl-en">put</span>(<span class="pl-s">"messages"</span>, <span class="pl-s1">messages</span>);
+<span class="pl-smi">RequestBody</span> <span class="pl-s1">body</span> = <span class="pl-smi">RequestBody</span>.<span class="pl-en">create</span>(<span class="pl-c1">JSON_MEDIA_TYPE</span>, <span class="pl-s1">jsonBody</span>.<span class="pl-en">toJSONString</span>());</pre></div>
 <p>发送请求</p>
-<pre lang="java" class="notranslate"><code class="notranslate">Request request = new Request.Builder()
-        .url(API_URL)
-        .post(body)
-        .addHeader("Authorization", "Bearer " + API_KEY)
-        .addHeader("Content-Type", "application/json")
-        .build();
-  try (Response response = CLIENT.newCall(request).execute()) {
-            if (!response.isSuccessful()) throw new IOException("Unexpected code " + response);
-      // 请求的结果大多数都在  response.body().string() ，极少数 流式请求需要自己找
-            System.out.println(response.body().string());
-        }
-</code></pre></div>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">Request</span> <span class="pl-s1">request</span> = <span class="pl-k">new</span> <span class="pl-smi">Request</span>.<span class="pl-smi">Builder</span>()
+        .<span class="pl-en">url</span>(<span class="pl-c1">API_URL</span>)
+        .<span class="pl-en">post</span>(<span class="pl-s1">body</span>)
+        .<span class="pl-en">addHeader</span>(<span class="pl-s">"Authorization"</span>, <span class="pl-s">"Bearer "</span> + <span class="pl-c1">API_KEY</span>)
+        .<span class="pl-en">addHeader</span>(<span class="pl-s">"Content-Type"</span>, <span class="pl-s">"application/json"</span>)
+        .<span class="pl-en">build</span>();
+  <span class="pl-k">try</span> (<span class="pl-smi">Response</span> <span class="pl-s1">response</span> = <span class="pl-smi">CLIENT</span>.<span class="pl-en">newCall</span>(<span class="pl-s1">request</span>).<span class="pl-en">execute</span>()) {
+            <span class="pl-k">if</span> (!<span class="pl-s1">response</span>.<span class="pl-en">isSuccessful</span>()) <span class="pl-k">throw</span> <span class="pl-k">new</span> <span class="pl-smi">IOException</span>(<span class="pl-s">"Unexpected code "</span> + <span class="pl-s1">response</span>);
+      <span class="pl-c">// 请求的结果大多数都在  response.body().string() ，极少数 流式请求需要自己找</span>
+            <span class="pl-smi">System</span>.<span class="pl-s1">out</span>.<span class="pl-en">println</span>(<span class="pl-s1">response</span>.<span class="pl-en">body</span>().<span class="pl-en">string</span>());
+        }</pre></div></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
 <div class="comments" id="comments"></div>
