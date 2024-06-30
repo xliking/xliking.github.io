@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href="//cdn.staticfile.net/Primer/21.0.7/primer.css" rel="stylesheet" />
+    <link rel="icon" href="https://xlike.email/images/tx.jpg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="#### 避免使用 SELECT * 
+
+- SELECT * 会消耗更多的 CPU
+
+- SELECT * 无用字段增加网络带宽资源消耗，增加数据传输时间，尤其是大字段（如 varchar、blob、text）
+
+- SELECT * 无法使用 MySQL 优化器覆盖索引的优化
+
+- SELECT <字段列表> 可减少表结构变更带来的影响
+#### 分页优化 
+
+普通的分页在数据量小的时候耗费时间还是比较短的。">
+<meta property="og:title" content="SQL调优">
+<meta property="og:description" content="#### 避免使用 SELECT * 
+
+- SELECT * 会消耗更多的 CPU
+
+- SELECT * 无用字段增加网络带宽资源消耗，增加数据传输时间，尤其是大字段（如 varchar、blob、text）
+
+- SELECT * 无法使用 MySQL 优化器覆盖索引的优化
+
+- SELECT <字段列表> 可减少表结构变更带来的影响
+#### 分页优化 
+
+普通的分页在数据量小的时候耗费时间还是比较短的。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://xliking.github.io/post/SQL-diao-you.html">
+<meta property="og:image" content="https://xlike.email/images/tx.jpg">
+<title>SQL调优</title>
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">SQL调优</h1>
+<div class="title-right">
+    <a href="https://xliking.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/xliking/xliking.github.io/issues/13" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><h4>避免使用 SELECT *</h4>
+<ul>
+<li>
+<p>SELECT * 会消耗更多的 CPU</p>
+</li>
+<li>
+<p>SELECT * 无用字段增加网络带宽资源消耗，增加数据传输时间，尤其是大字段（如 varchar、blob、text）</p>
+</li>
+<li>
+<p>SELECT * 无法使用 MySQL 优化器覆盖索引的优化</p>
+</li>
+<li>
+<p>SELECT &lt;字段列表&gt; 可减少表结构变更带来的影响</p>
+</li>
+</ul>
+<h4>分页优化</h4>
+<p>普通的分页在数据量小的时候耗费时间还是比较短的。</p>
+<div class="highlight highlight-source-sql"><pre class="notranslate"><span class="pl-k">SELECT</span> <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span>,<span class="pl-s"><span class="pl-pds">`</span>name<span class="pl-pds">`</span></span> <span class="pl-k">FROM</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> <span class="pl-k">ORDER BY</span> <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span> <span class="pl-k">DESC</span> <span class="pl-k">LIMIT</span> <span class="pl-c1">10000</span>, <span class="pl-c1">10</span>;</pre></div>
+<p>如果数据量变大，达到百万甚至是千万级别，普通的分页耗费的时间就非常长</p>
+<div class="highlight highlight-source-sql"><pre class="notranslate"><span class="pl-k">SELECT</span> <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span>,<span class="pl-s"><span class="pl-pds">`</span>name<span class="pl-pds">`</span></span> <span class="pl-k">FROM</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> <span class="pl-k">ORDER BY</span> <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span> <span class="pl-k">DESC</span> <span class="pl-k">LIMIT</span> <span class="pl-c1">1000000</span>, <span class="pl-c1">10</span>
+<span class="pl-k">SELECT</span> <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span>,<span class="pl-s"><span class="pl-pds">`</span>name<span class="pl-pds">`</span></span> <span class="pl-k">FROM</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> <span class="pl-k">ORDER BY</span> <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span> <span class="pl-k">DESC</span> <span class="pl-k">LIMIT</span> <span class="pl-c1">10</span>, <span class="pl-c1">1000000</span></pre></div>
+<p><strong>优化</strong> 可以将上述 SQL 语句修改为子查询。</p>
+<div class="highlight highlight-source-sql"><pre class="notranslate"><span class="pl-k">SELECT</span> <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span>,<span class="pl-s"><span class="pl-pds">`</span>name<span class="pl-pds">`</span></span> <span class="pl-k">FROM</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> <span class="pl-k">WHERE</span> id <span class="pl-k">&gt;=</span> (<span class="pl-k">SELECT</span> id <span class="pl-k">FROM</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> <span class="pl-k">LIMIT</span> <span class="pl-c1">1000000</span>, <span class="pl-c1">1</span>) <span class="pl-k">LIMIT</span> <span class="pl-c1">10</span></pre></div>
+<p>我们先查询出 limit 第一个参数对应的主键值，再根据这个主键值再去过滤并 limit，这样效率会更快。<br>
+不过，子查询的结果会产生一张新表，会影响性能，应该尽量避免大量使用子查询。</p>
+<p>除了子查询之外，还以采用延迟查询的方式来优化。</p>
+<div class="highlight highlight-source-sql"><pre class="notranslate"><span class="pl-k">SELECT</span> <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span>,<span class="pl-s"><span class="pl-pds">`</span>name<span class="pl-pds">`</span></span> <span class="pl-k">FROM</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> a, (<span class="pl-k">SELECT</span> id <span class="pl-k">from</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> <span class="pl-k">ORDER BY</span> <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span> <span class="pl-k">DESC</span> <span class="pl-k">LIMIT</span> <span class="pl-c1">1000000</span>, <span class="pl-c1">10</span>) b <span class="pl-k">where</span> <span class="pl-c1">a</span>.<span class="pl-c1">id</span> <span class="pl-k">=</span> <span class="pl-c1">b</span>.<span class="pl-c1">id</span></pre></div>
+<p>我们先提取对应的主键，再将这个主键表与原数据表关联。</p>
+<h4>尽量避免多表做 join</h4>
+<p>join 的效率比较低，主要原因是因为其使用嵌套循环（Nested Loop）来实现关联查询，三种不同的实现效率都不是很高：</p>
+<ul>
+<li><strong>Simple Nested-Loop Join</strong> ：没有进过优化，直接使用笛卡尔积实现 join，逐行遍历/全表扫描，效率最低。</li>
+<li><strong>Block Nested-Loop Join</strong> ：利用 JOIN BUFFER 进行优化，性能受到 JOIN BUFFER 大小的影响，相比于 Simple Nested-Loop Join 性能有所提升。不过，如果两个表的数据过大的话，无论如何优化，Block Nested-Loop Join 对性能的提升都非常有限。</li>
+<li><strong>Index Nested-Loop Join</strong> ：在必要的字段上增加索引，使 join 的过程中可以使用到这个索引，这样可以让 Block Nested-Loop Join 转换为 Index Nested-Loop Join，性能得到进一步提升。</li>
+</ul>
+<p>实际业务场景避免多表 join 常见的做法有两种：</p>
+<ol>
+<li>
+<p><strong>单表查询后在内存中自己做关联</strong> ：对数据库做单表查询，再根据查询结果进行二次查询，以此类推，最后再进行关联。</p>
+</li>
+<li>
+<p><strong>数据冗余</strong>，把一些重要的数据在表中做冗余，尽可能地避免关联查询。很笨的一张做法，表结构比较稳定的情况下才会考虑这种做法。进行冗余设计之前，思考一下自己的表结构设计的是否有问题。<br>
+更加推荐第一种，这种在实际项目中的使用率比较高，除了性能不错之外，还有如下优势：</p>
+</li>
+<li>
+<p><strong>拆分后的单表查询代码可复用性更高</strong> ：join 联表 SQL 基本不太可能被复用。</p>
+</li>
+<li>
+<p><strong>单表查询更利于后续的维护</strong> ：不论是后续修改表结构还是进行分库分表，单表查询维护起来都更容易。</p>
+</li>
+</ol>
+<h4>选择合适的字段类型</h4>
+<p>存储字节越小，占用也就空间越小，性能也越好。</p>
+<p><strong>a.某些字符串可以转换成数字类型存储比如可以将 IP 地址转换成整形数据。</strong></p>
+<p>数字是连续的，性能更好，占用空间也更小。</p>
+<p>MySQL 提供了两个方法来处理 ip 地址</p>
+<ul>
+<li>INET_ATON() ： 把 ip 转为无符号整型 (4-8 位)</li>
+<li>INET_NTOA() :把整型的 ip 转为地址</li>
+</ul>
+<p>插入数据前，先用 INET_ATON() 把 ip 地址转为整型，显示数据时，使用 INET_NTOA() 把整型的 ip 地址转为地址显示即可。</p>
+<p><strong>b.对于非负型的数据 (如自增 ID,整型 IP，年龄) 来说,要优先使用无符号整型来存储。</strong></p>
+<p>无符号相对于有符号可以多出一倍的存储空间</p>
+<div class="highlight highlight-source-sql"><pre class="notranslate">SIGNED <span class="pl-k">INT</span> <span class="pl-k">-</span><span class="pl-c1">2147483648</span>~<span class="pl-c1">2147483647</span>
+UNSIGNED <span class="pl-k">INT</span> <span class="pl-c1">0</span>~<span class="pl-c1">4294967295</span></pre></div>
+<p><strong>c.小数值类型（比如年龄、状态表示如 0/1）优先使用 TINYINT 类型。</strong></p>
+<p><strong>d.对于日期类型来说， DateTime 类型耗费空间更大且没有时区信息，建议使用 Timestamp。</strong><br>
+<strong>e.金额字段用 decimal，避免精度丢失。</strong></p>
+<p><strong>f.尽量使用自增 id 作为主键。</strong></p>
+<p>如果主键为自增 id 的话，每次都会将数据加在 B+树尾部（本质是双向链表），时间复杂度为 O(1)。在写满一个数据页的时候，直接申请另一个新数据页接着写就可以了。</p>
+<p>如果主键是非自增 id 的话，为了让新加入数据后 B+树的叶子节点还能保持有序，它就需要往叶子结点的中间找，查找过程的时间复杂度是 O(lgn)。如果这个也被写满的话，就需要进行页分裂。页分裂操作需要加悲观锁，想能非常低。</p>
+<p>不过， 像分库分表这类场景就不建议使用自增 id 作为主键，应该使用分布式 ID 比如 uuid 。</p>
+<h4>尽量用 UNION ALL 代替 UNION</h4>
+<p>UNION 会把两个结果集的所有数据放到临时表中后再进行去重操作，更耗时，更消耗 CPU 资源。</p>
+<p>UNION ALL 不会再对结果集进行去重操作，获取到的数据包含重复的项。</p>
+<p>不过，如果实际业务场景中不允许产生重复数据的话，还是可以使用 UNION。</p>
+<h4>批量操作</h4>
+<p>对于数据库中的数据更新，如果能使用批量操作就要尽量使用，减少请求数据库的次数，提高性能。</p>
+<div class="highlight highlight-source-sql"><pre class="notranslate"><span class="pl-c"><span class="pl-c">#</span> 反例</span>
+<span class="pl-k">INSERT INTO</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> (<span class="pl-s"><span class="pl-pds">`</span>id<span class="pl-pds">`</span></span>, <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span>, <span class="pl-s"><span class="pl-pds">`</span>name<span class="pl-pds">`</span></span>) <span class="pl-k">VALUES</span> (<span class="pl-c1">1</span>, <span class="pl-c1">426547</span>, <span class="pl-s"><span class="pl-pds">'</span>user1<span class="pl-pds">'</span></span>);
+<span class="pl-k">INSERT INTO</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> (<span class="pl-s"><span class="pl-pds">`</span>id<span class="pl-pds">`</span></span>, <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span>, <span class="pl-s"><span class="pl-pds">`</span>name<span class="pl-pds">`</span></span>) <span class="pl-k">VALUES</span> (<span class="pl-c1">1</span>, <span class="pl-c1">33</span>, <span class="pl-s"><span class="pl-pds">'</span>user2<span class="pl-pds">'</span></span>);
+<span class="pl-k">INSERT INTO</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> (<span class="pl-s"><span class="pl-pds">`</span>id<span class="pl-pds">`</span></span>, <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span>, <span class="pl-s"><span class="pl-pds">`</span>name<span class="pl-pds">`</span></span>) <span class="pl-k">VALUES</span> (<span class="pl-c1">1</span>, <span class="pl-c1">293854</span>, <span class="pl-s"><span class="pl-pds">'</span>user3<span class="pl-pds">'</span></span>);
+
+<span class="pl-c"><span class="pl-c">#</span> 正例</span>
+<span class="pl-k">INSERT into</span> <span class="pl-s"><span class="pl-pds">`</span>cus_order<span class="pl-pds">`</span></span> (<span class="pl-s"><span class="pl-pds">`</span>id<span class="pl-pds">`</span></span>, <span class="pl-s"><span class="pl-pds">`</span>score<span class="pl-pds">`</span></span>, <span class="pl-s"><span class="pl-pds">`</span>name<span class="pl-pds">`</span></span>) <span class="pl-k">values</span>(<span class="pl-c1">1</span>, <span class="pl-c1">426547</span>, <span class="pl-s"><span class="pl-pds">'</span>user1<span class="pl-pds">'</span></span>),(<span class="pl-c1">1</span>, <span class="pl-c1">33</span>, <span class="pl-s"><span class="pl-pds">'</span>user2<span class="pl-pds">'</span></span>),(<span class="pl-c1">1</span>, <span class="pl-c1">293854</span>, <span class="pl-s"><span class="pl-pds">'</span>user3<span class="pl-pds">'</span></span>);</pre></div>
+<h5>被频繁更新的字段应该慎重建立索引</h5>
+<p>虽然索引能带来查询上的效率，但是维护索引的成本也是不小的。 如果一个字段不被经常查询，反而被经常修改，那么就更不应该在这种字段上建立索引了。</p>
+<h5>尽可能的考虑建立联合索引而不是单列索引</h5>
+<p>因为索引是需要占用磁盘空间的，可以简单理解为每个索引都对应着一颗 B+树。如果一个表的字段过多，索引过多，那么当这个表的数据达到一个体量后，索引占用的空间也是很多的，且修改索引时，耗费的时间也是较多的。如果是联合索引，多个字段在一个索引上，那么将会节约很大磁盘空间，且修改数据的操作效率也会提升。</p>
+<h5>注意避免冗余索引</h5>
+<p>冗余索引指的是索引的功能相同，能够命中索引(a, b)就肯定能命中索引(a) ，那么索引(a)就是冗余索引。如（name,city ）和（name ）这两个索引就是冗余索引，能够命中前者的查询肯定是能够命中后者的 在大多数情况下，都应该尽量扩展已有的索引而不是创建新索引。</p></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+</div>
+    <div id="footer">Copyright © <span id="year"></span><a href="https://xliking.github.io"> 木池 </a>
+<p>
+<span id="runday"></span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a>
+</p>
+
+<script>
+if(""!=""){
+    var now=new Date();
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("year").innerHTML=now.getFullYear();
+    if(""!=""){document.getElementById("runday").innerHTML=" • "+"网站运行"+diffDay+"天"+" • ";}
+    else{document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";}
+}
+</script>
+</div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n\n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","xliking/xliking.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+</script>
+
+
+</html>
