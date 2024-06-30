@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html data-color-mode="light" data-dark-theme="dark" data-light-theme="light" lang="zh-CN">
+<head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link href="//cdn.staticfile.net/Primer/21.0.7/primer.css" rel="stylesheet" />
+    <link rel="icon" href="https://xlike.email/images/tx.jpg"><script>
+        let theme = localStorage.getItem("meek_theme") || "light";
+        document.documentElement.setAttribute("data-color-mode", theme);
+    </script>
+<meta name="description" content="#### 基础概念
+
+**同步和异步**
+同步和异步通常用来形容一次方法调用。">
+<meta property="og:title" content="Java并发">
+<meta property="og:description" content="#### 基础概念
+
+**同步和异步**
+同步和异步通常用来形容一次方法调用。">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://xliking.github.io/post/Java-bing-fa.html">
+<meta property="og:image" content="https://xlike.email/images/tx.jpg">
+<title>Java并发</title>
+<link href="//unpkg.com/@wooorm/starry-night@2.1.1/style/both.css" rel="stylesheet" />
+
+</head>
+<style>
+body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;padding: 45px;font-size: 16px;font-family: sans-serif;line-height: 1.25;}
+#header{display:flex;padding-bottom:8px;border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));margin-bottom: 16px;}
+#footer {margin-top:64px; text-align: center;font-size: small;}
+
+</style>
+
+<style>
+.postTitle{margin: auto 0;font-size:40px;font-weight:bold;}
+.title-right{display:flex;margin:auto 0 0 auto;}
+.title-right .circle{padding: 14px 16px;margin-right:8px;}
+#postBody{border-bottom: 1px solid var(--color-border-default);padding-bottom:36px;}
+#postBody hr{height:2px;}
+#cmButton{height:48px;margin-top:48px;}
+#comments{margin-top:64px;}
+.g-emoji{font-size:24px;}
+@media (max-width: 600px) {
+    body {padding: 8px;}
+    .postTitle{font-size:24px;}
+}
+</style>
+
+
+
+
+<body>
+    <div id="header">
+<h1 class="postTitle">Java并发</h1>
+<div class="title-right">
+    <a href="https://xliking.github.io" id="buttonHome" class="btn btn-invisible circle" title="首页">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathHome" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+    <a href="https://github.com/xliking/xliking.github.io/issues/14" target="_blank" class="btn btn-invisible circle" title="Issue">
+        <svg class="octicon" width="16" height="16">
+            <path id="pathIssue" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+    
+
+    <a class="btn btn-invisible circle" onclick="modeSwitch();" title="切换主题">
+        <svg class="octicon" width="16" height="16" >
+            <path id="themeSwitch" fill-rule="evenodd"></path>
+        </svg>
+    </a>
+
+</div>
+</div>
+    <div id="content">
+<div class="markdown-body" id="postBody"><h4>基础概念</h4>
+<p><strong>同步和异步</strong><br>
+同步和异步通常用来形容一次方法调用。</p>
+<ul>
+<li>
+<p>同步方法调用：一旦开始，调用者必须等到方法调用返回后，才能继续后续的行为。</p>
+</li>
+<li>
+<p>异步方法调用：更像是一个消息传递，一旦开始，方法调用就会立即返回，调用者可以继续后续的操作，而异步方法通常会另在另一个线程中 真实地执行，如果需要返回结果，那么当异步调用真实完成时，则会通知调用者。</p>
+</li>
+</ul>
+<p><strong>并发与并行</strong></p>
+<ul>
+<li>并发：偏重于多个任务，交替执行，多个任务之间可能还是串行的。</li>
+<li>并行：是真正意义上的同时执行。</li>
+</ul>
+<p><strong>临界区</strong><br>
+用来表示一种 公共资源，或是共享数据，一旦临界区资源被某个线程占用，其他线程想要使用这个资源就必须 等待。</p>
+<p><strong>阻塞和非阻塞</strong><br>
+通常用来形容多线程间的相互影响，</p>
+<ul>
+<li>
+<p>阻塞：如一个线程占用的临界区资源，那么其他需要这个资源的线程就必须在这个资源的临界区中进行等待。等待会导致线程挂起，这种情况就是阻塞。</p>
+</li>
+<li>
+<p>非阻塞：强调没有一个线程能够妨碍其他线程执行。</p>
+</li>
+</ul>
+<p><strong>死锁</strong><br>
+多个线程持有彼此需要的资源不肯释放。</p>
+<p><strong>饥饿</strong><br>
+线程因为种种原因无法获得其所需的资源，导致一直无法执行。</p>
+<p>线程 优先级 过低，其它高优先级线程一直占有资源。<br>
+某一个线程一直占用关键资源不肯释放。<br>
+<strong>活锁</strong><br>
+多个线程秉持 谦让 的原则，主动将资源释放给对方使用，导致资源不断在多个线程之间跳动，没有一个线程能同时拿到所有资源而正常执行。</p>
+<p><strong>并发级别</strong></p>
+<ul>
+<li>阻塞：在所需资源被释放前，当前线程无法继续执行。</li>
+<li>无饥饿：锁是 公平 的，满足先来后到，不允许高优先级线程插队优先获取资源。</li>
+<li>无障碍：允许多个线程进入临界区，无障碍的线程一旦检测到数据修改冲突，则对自己的修改进行 回滚，确保数据安全，进行重试。如果没有发生数据竞争，则可以完成修改操作。</li>
+<li>无锁：CAS (Compare And Set)，线程可能会通过一个无线循环来尝试修改变量，如果没有冲突则修改成功，否则继续尝试修改。</li>
+</ul>
+<p><strong>无等待</strong><br>
+无等待要求所有线程在有限步内完成。通过限制步骤上限来避免饥饿问题</p>
+<hr>
+<h4>内存模型（Java Memory Model)</h4>
+<p><strong>为了保证并发程序争正确的执行，就有了：</strong></p>
+<p><strong>原子性</strong></p>
+<p>原子性指一个操作是不可中断的，即使在多线程的情况下也不会被干扰。</p>
+<p><strong>可见性</strong></p>
+<p>可见性指当一个线程修改了一个共享变量的值，其它线程是否能够知道这个修改。</p>
+<p><strong>有序性</strong></p>
+<p>程序在执行时，有可能会进行指令重排，CPU 指令执行的顺序不一定和程序的顺序一致。指令重排保证 <code class="notranslate">串行语义一致</code> （即重排后执行的指令与程序真正执行顺序的语义一致），但不保证多线程语义一致。</p>
+<hr>
+<h4>并行程序基础</h4>
+<p><strong>线程创建</strong></p>
+<ul>
+<li>继承 <code class="notranslate">Thread</code> 类</li>
+<li>实现 <code class="notranslate">Runnable</code> 接口</li>
+<li>实现 <code class="notranslate">Callable</code> 接口</li>
+</ul>
+<p><strong>线程停止</strong></p>
+<p>使用线程的 <code class="notranslate">stop()</code> 方法可以立即停止线程，但是是在线程执行过程中停止，容易造成数据不一致的问题，不建议使用。</p>
+<p><strong>线程中断</strong></p>
+<p>使用线程的 <code class="notranslate">interrupt()</code> 方法通知线程中断，收到中断通知的线程不会立即退出，而是由线程自行决定退出时机，为了避免造成数据不一致的问题，通过 <code class="notranslate">isInterrupted()</code> 方法获取线程的中断状态。<code class="notranslate">wait()</code>、<code class="notranslate">sleep()</code> 等方法被中断会抛出 <code class="notranslate">InterruptedException</code> 异常，此异常会清除线程的中断标记。</p>
+<p><strong>等待（wait）和通知（notify）</strong></p>
+<p><code class="notranslate">Object</code> 类提供了 <code class="notranslate">wait()</code> 和 <code class="notranslate">notify()</code> 方法，意味任何对象都能调用这两个方法， <code class="notranslate">wait()</code> 方法必须包含在 <code class="notranslate">synchronized</code> 语句块中，只有获取了目标对象的监视器，才能调用这两个方法。当在一个对象实例上调用 <code class="notranslate">wait()</code> 方法，当前线程就会进入目标对象的等待队列，此队列可能会包含多个等待目标对象的线程，当 <code class="notranslate">notify()</code> 方法被调用，就会从等待队列中随机唤醒一个线程，继续执行。当对象的 <code class="notranslate">notifyAll()</code> 方法被调用，等待队列中的所有对象都会被唤醒。</p>
+<p><strong>wait() 和 sleep() 的区别</strong></p>
+<ul>
+<li><code class="notranslate">wait()</code> 方法可被唤醒，<code class="notranslate">sleep()</code> 方法只能一直休眠到指定时间。</li>
+<li><code class="notranslate">wait()</code> 方法会释放目标对象的锁，<code class="notranslate">sleep()</code> 方法不会释放任何资源。</li>
+</ul>
+<p><strong>挂起（suspend）和继续执行（resume）</strong></p>
+<p>使用线程的 <code class="notranslate">suspend()</code> 方法会使线程暂停，但是并不会释放任何锁资源，直到执行此线程的 <code class="notranslate">resume()</code> 方法，如果 <code class="notranslate">resume()</code> 方法先于 <code class="notranslate">suspend()</code> 方法执行，那么线程就无法被唤醒从而继续执行，也不会释放占有的锁资源，而从线程状态上看，居然还是 <code class="notranslate">RUNNABLE</code>，所以不建议使用挂起的方式去操作线程。</p>
+<p><strong>等待结束（join）</strong></p>
+<p>在某些时候，一个线程的输入可能会依赖其它线程的输出，这就需要通过使用被依赖线程的 <code class="notranslate">join()</code> 方法加入当前线程，等待被依赖线程执行结束。</p>
+<p><strong>谦让（yield）</strong></p>
+<p>使用线程的 <code class="notranslate">yield()</code> 方法会使线程让出 CPU，但不是暂停执行，线程还会进行 CPU 的争夺。如果一个线程不那么重要，或者对应任务的优先级非常低，或者不希望它占用过多的资源，就可以使用 <code class="notranslate">yield()</code> 方法给予其它线程更多的执行机会。</p>
+<p><strong>线程组</strong></p>
+<p>使用线程组可以对线程进行分组，从而方便管理。</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">ThreadGroup</span> <span class="pl-s1">tg</span> = <span class="pl-k">new</span> <span class="pl-smi">ThreadGroup</span>(<span class="pl-s">"tg"</span>);
+<span class="pl-smi">Thread</span> <span class="pl-s1">t1</span> = <span class="pl-k">new</span> <span class="pl-smi">Thread</span>(<span class="pl-s1">tg</span>, <span class="pl-s">"T1"</span>);</pre></div>
+<p><strong>守护线程（daemon）</strong></p>
+<p>守护线程是一种特殊的线程，是系统的守护者，在后台默默完成一些系统性的服务，如垃圾回收、JIT 等。如果用户线程全部结束，那么整个应用程序也应该结束，守护线程也会退出。</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-smi">Thread</span> <span class="pl-s1">t</span> = <span class="pl-k">new</span> <span class="pl-smi">Thread</span>();
+<span class="pl-c">// 必须在执行 start() 方法之前设置为守护线程</span>
+<span class="pl-s1">t</span>.<span class="pl-en">setDaemon</span>(<span class="pl-c1">true</span>);
+<span class="pl-s1">t</span>.<span class="pl-en">start</span>();</pre></div>
+<p><strong>线程优先级</strong></p>
+<p>Java 中的线程可以有优先级，优先级高的线程在竞争资源时会更有优势。线程优先级的范围为 1~10 ，数字越大优先级越高。</p>
+<div class="highlight highlight-source-java"><pre class="notranslate"><span class="pl-c">/**</span>
+<span class="pl-c"> * 线程可以拥有的最小优先级。</span>
+<span class="pl-c"> */</span>
+<span class="pl-k">public</span> <span class="pl-k">final</span> <span class="pl-k">static</span> <span class="pl-smi">int</span> <span class="pl-c1">MIN_PRIORITY</span> = <span class="pl-c1">1</span>;
+
+<span class="pl-c">/**</span>
+<span class="pl-c"> *分配给线程的默认优先级。</span>
+<span class="pl-c"> */</span>
+<span class="pl-k">public</span> <span class="pl-k">final</span> <span class="pl-k">static</span> <span class="pl-smi">int</span> <span class="pl-c1">NORM_PRIORITY</span> = <span class="pl-c1">5</span>;
+
+<span class="pl-c">/**</span>
+<span class="pl-c"> * 线程可以拥有的最大优先级。</span>
+<span class="pl-c"> */</span>
+<span class="pl-k">public</span> <span class="pl-k">final</span> <span class="pl-k">static</span> <span class="pl-smi">int</span> <span class="pl-c1">MAX_PRIORITY</span> = <span class="pl-c1">10</span>;</pre></div>
+<p><strong>volatile</strong></p>
+<p>使用 <code class="notranslate">volatile</code> 关键字可以通知虚拟机不能随意变动、优化目标指令，被此关键字修饰的变量被修改后，应用程序范围内所有的线程都能“看到”这个改动。<code class="notranslate">volatile</code> 关键字主要作用包括：</p>
+<ul>
+<li>保证可见性：对修饰变量的修改能为其它线程所知，但是写冲突仍可能导致错误。</li>
+<li>保证有序性：不能随意变动、优化指令。</li>
+</ul>
+<p><strong>synchronized</strong></p>
+<p>当多个线程同时写一个数据时，容易产生写冲突，Java 提供了用于线程间同步的关键字 <code class="notranslate">synchronized</code> ，它的作用是对同步代码进行加锁，使得每次只能有一个线程进入同步代码块，从而保证线程间的安全性，<code class="notranslate">synchronized</code> 关键字有多种用法：</p>
+<ul>
+<li>指定加锁对象：对给定对象加锁，进入同步代码块前需要获取给定对象的锁。</li>
+<li>直接作用于实例方法，相当于对当前实例加锁，进入同步代码块前需要获取当前实例的锁。</li>
+<li>直接作用于静态方法：相当于对当前类加锁，进入同步代码块前需要获取当前类的锁。 <code class="notranslate">synchronized</code> 限制每次只有一个线程可以访问同步代码块，因此即使进行指令重排，串行语义是不会改变的，被 <code class="notranslate">synchronized</code> 限制的多个线程又可看做是顺序执行的，能够保证可见性和有序性。</li>
+</ul></div>
+<div style="font-size:small;margin-top:8px;float:right;"></div>
+<button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
+<div class="comments" id="comments"></div>
+</div>
+    <div id="footer">Copyright © <span id="year"></span><a href="https://xliking.github.io"> 木池 </a>
+<p>
+<span id="runday"></span>Powered by <a href="https://meekdai.com/Gmeek.html" target="_blank">Gmeek</a>
+</p>
+
+<script>
+if(""!=""){
+    var now=new Date();
+    var startSite=new Date("");
+    var diff=now.getTime()-startSite.getTime();
+    var diffDay=Math.floor(diff/(1000*60*60*24));
+    document.getElementById("year").innerHTML=now.getFullYear();
+    if(""!=""){document.getElementById("runday").innerHTML=" • "+"网站运行"+diffDay+"天"+" • ";}
+    else{document.getElementById("runday").innerHTML="网站运行"+diffDay+"天"+" • ";}
+}
+</script>
+</div>
+</body>
+<script>
+var IconList={'sun': 'M8 10.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM8 12a4 4 0 100-8 4 4 0 000 8zM8 0a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0V.75A.75.75 0 018 0zm0 13a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 018 13zM2.343 2.343a.75.75 0 011.061 0l1.06 1.061a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 010-1.06zm9.193 9.193a.75.75 0 011.06 0l1.061 1.06a.75.75 0 01-1.06 1.061l-1.061-1.06a.75.75 0 010-1.061zM16 8a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0116 8zM3 8a.75.75 0 01-.75.75H.75a.75.75 0 010-1.5h1.5A.75.75 0 013 8zm10.657-5.657a.75.75 0 010 1.061l-1.061 1.06a.75.75 0 11-1.06-1.06l1.06-1.06a.75.75 0 011.06 0zm-9.193 9.193a.75.75 0 010 1.06l-1.06 1.061a.75.75 0 11-1.061-1.06l1.06-1.061a.75.75 0 011.061 0z', 'moon': 'M9.598 1.591a.75.75 0 01.785-.175 7 7 0 11-8.967 8.967.75.75 0 01.961-.96 5.5 5.5 0 007.046-7.046.75.75 0 01.175-.786zm1.616 1.945a7 7 0 01-7.678 7.678 5.5 5.5 0 107.678-7.678z', 'sync': 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z', 'home': 'M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z', 'github': 'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z'};
+var utterancesLoad=0;
+
+let themeSettings={
+    "dark": ["dark","moon","#00f0ff","dark-blue"],
+    "light": ["light","sun","#ff5000","github-light"],
+    "auto": ["auto","sync","","preferred-color-scheme"]
+};
+function changeTheme(mode, icon, color, utheme){
+    document.documentElement.setAttribute("data-color-mode",mode);
+    document.getElementById("themeSwitch").setAttribute("d",value=IconList[icon]);
+    document.getElementById("themeSwitch").parentNode.style.color=color;
+    if(utterancesLoad==1){utterancesTheme(utheme);}
+}
+function modeSwitch(){
+    let currentMode=document.documentElement.getAttribute('data-color-mode');
+    let newMode = currentMode === "light" ? "dark" : currentMode === "dark" ? "auto" : "light";
+    localStorage.setItem("meek_theme", newMode);
+    if(themeSettings[newMode]){
+        changeTheme(...themeSettings[newMode]);
+    }
+}
+function utterancesTheme(theme){
+    const message={type:'set-theme',theme: theme};
+    const iframe=document.getElementsByClassName('utterances-frame')[0];
+    iframe.contentWindow.postMessage(message,'https://utteranc.es');
+}
+if(themeSettings[theme]){changeTheme(...themeSettings[theme]);}
+console.log("\n %c Gmeek last https://github.com/Meekdai/Gmeek \n\n","padding:5px 0;background:#02d81d;color:#fff");
+</script>
+
+<script>
+document.getElementById("pathHome").setAttribute("d",IconList["home"]);
+document.getElementById("pathIssue").setAttribute("d",IconList["github"]);
+
+function openComments(){
+    cm=document.getElementById("comments");
+    cmButton=document.getElementById("cmButton");
+    cmButton.innerHTML="loading";
+    span=document.createElement("span");
+    span.setAttribute("class","AnimatedEllipsis");
+    cmButton.appendChild(span);
+
+    script=document.createElement("script");
+    script.setAttribute("src","https://utteranc.es/client.js");
+    script.setAttribute("repo","xliking/xliking.github.io");
+    script.setAttribute("issue-term","title");
+    
+    if(localStorage.getItem("meek_theme")=="dark"){script.setAttribute("theme","dark-blue");}
+    else if(localStorage.getItem("meek_theme")=="light") {script.setAttribute("theme","github-light");}
+    else{script.setAttribute("theme","preferred-color-scheme");}
+    
+    script.setAttribute("crossorigin","anonymous");
+    script.setAttribute("async","");
+    cm.appendChild(script);
+
+    int=self.setInterval("iFrameLoading()",200);
+}
+
+function iFrameLoading(){
+    var utterances=document.getElementsByClassName('utterances');
+    if(utterances.length==1){
+        if(utterances[0].style.height!=""){
+            utterancesLoad=1;
+            int=window.clearInterval(int);
+            document.getElementById("cmButton").style.display="none";
+            console.log("utterances Load OK");
+        }
+    }
+}
+</script>
+
+
+</html>
