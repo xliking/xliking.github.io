@@ -1,5 +1,18 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>木池</title><link>https://xliking.github.io</link><description>JAVA日常笔记</description><copyright>木池</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://xlike.email/images/tx.jpg</url><title>avatar</title><link>https://xliking.github.io</link></image><lastBuildDate>Wed, 03 Jul 2024 18:26:48 +0000</lastBuildDate><managingEditor>木池</managingEditor><ttl>60</ttl><webMaster>木池</webMaster><item><title>关闭端口，杀死进程的bat脚本</title><link>https://xliking.github.io/post/guan-bi-duan-kou-%EF%BC%8C-sha-si-jin-cheng-de-bat-jiao-ben.html</link><description>```&#13;
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0"><channel><title>木池</title><link>https://xliking.github.io</link><description>JAVA日常笔记</description><copyright>木池</copyright><docs>http://www.rssboard.org/rss-specification</docs><generator>python-feedgen</generator><image><url>https://xlike.email/images/tx.jpg</url><title>avatar</title><link>https://xliking.github.io</link></image><lastBuildDate>Thu, 04 Jul 2024 06:36:01 +0000</lastBuildDate><managingEditor>木池</managingEditor><ttl>60</ttl><webMaster>木池</webMaster><item><title>Docker_ALiYun</title><link>https://xliking.github.io/post/Docker_ALiYun.html</link><description>**登录** &#13;
+```&#13;
+docker login --username=aliyun6760578873 registry.cn-hangzhou.aliyuncs.com&#13;
+ ```&#13;
+**从Registry中拉取镜像**&#13;
+```&#13;
+docker pull registry.cn-hangzhou.aliyuncs.com/xlike/midj:[镜像版本号]&#13;
+```&#13;
+**将镜像推送到Registry**&#13;
+```&#13;
+$ docker login --username=aliyun6760578873 registry.cn-hangzhou.aliyuncs.com&#13;
+$ docker tag [ImageId] registry.cn-hangzhou.aliyuncs.com/xlike/midj:[镜像版本号]&#13;
+$ docker push registry.cn-hangzhou.aliyuncs.com/xlike/midj:[镜像版本号]&#13;
+```。</description><guid isPermaLink="true">https://xliking.github.io/post/Docker_ALiYun.html</guid><pubDate>Thu, 04 Jul 2024 06:35:27 +0000</pubDate></item><item><title>关闭端口，杀死进程的bat脚本</title><link>https://xliking.github.io/post/guan-bi-duan-kou-%EF%BC%8C-sha-si-jin-cheng-de-bat-jiao-ben.html</link><description>```&#13;
 @echo off&#13;
 setlocal&#13;
 &#13;
