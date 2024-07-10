@@ -89,7 +89,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li><strong>t_user_system_notice（用户系统通知表） ：</strong> 存储用户接受的通知。</li>
 </ol>
 <p>t_manager_system_notice（管理员系统通知表） 表结构如下：</p>
-<table role="table">
+<markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th>字段名</th>
@@ -139,9 +139,9 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <td>发布时间</td>
 </tr>
 </tbody>
-</table>
+</table></markdown-accessiblity-table>
 <p>t_user_system_notice（用户系统通知表）结构如下：</p>
-<table role="table">
+<markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th>字段名</th>
@@ -176,7 +176,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <td>拉取通知的时间</td>
 </tr>
 </tbody>
-</table>
+</table></markdown-accessiblity-table>
 <p><strong>当管理员发布一条通知后，将通知插入 t_manager_system_notice 表中，然后系统定时的从 t_manager_system_notice 表中拉取通知，然后根据通知的 type 将通知插入 t_user_system_notice 表中。</strong></p>
 <p>如果通知的 type 是 single 的，那就只需要插入一条记录到 t_user_system_notice 中。如果是全体用户，那么就需要将一个通知批量根据不同的用户 ID 插入到 t_user_system_notice 中，这个数据量就需要根据平台的用户量来计算。</p>
 <p>需要注意的是：</p>
@@ -211,7 +211,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li>当 action 为回复，source 为评论时，我就知道：有用户回复了我的某条评论；</li>
 </ul>
 <p>由此可以设计出事件提醒表 t_event_remind，其结构如下：</p>
-<table role="table">
+<markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th>字段名</th>
@@ -271,7 +271,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <td>提醒的时间</td>
 </tr>
 </tbody>
-</table>
+</table></markdown-accessiblity-table>
 <h5>消息聚合</h5>
 <p>消息聚合只适用于事件提醒，以聚合之后的点赞消息来说：</p>
 <ul>
@@ -293,7 +293,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <li>与当前正在对话的用户的对话框，显示了当前用户与目标用户的所有消息。</li>
 </ol>
 <p>按照这个设计，我们可以先设计出聊天室表 t_private_chat，因为是一对一，所以聊天室表会包含对话的两个用户的信息：</p>
-<table role="table">
+<markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th>字段名</th>
@@ -323,10 +323,10 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <td>最后一条消息的内容</td>
 </tr>
 </tbody>
-</table>
+</table></markdown-accessiblity-table>
 <p>这里 user1_id 和 user2_id 代表两个用户的 ID，并无特定的先后顺序。</p>
 <p>接下来是私信表 t_private_message 了，私信自然和所属的聊天室有联系，且考虑到私信可以在记录中删除（删除了只是不显示记录，但是对方会有记录，撤回才是真正的删除），就还需要记录私信的状态，</p>
-<table role="table">
+<markdown-accessiblity-table><table role="table">
 <thead>
 <tr>
 <th>字段名</th>
@@ -376,7 +376,7 @@ body{box-sizing: border-box;min-width: 200px;max-width: 900px;margin: 20px auto;
 <td>发送时间</td>
 </tr>
 </tbody>
-</table></div>
+</table></markdown-accessiblity-table></div>
 <div style="font-size:small;margin-top:8px;float:right;"></div>
 
 <button class="btn btn-block" type="button" onclick="openComments()" id="cmButton">评论</button>
