@@ -11,6 +11,7 @@ import java.net.Proxy;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -28,17 +29,9 @@ public class OkHttpUtils {
     private static OkHttpClient getClient(Integer connectTimeout, Integer readTimeout, Proxy proxy) {
         OkHttpClient.Builder builder = new OkHttpClient.Builder();
 
-        if (connectTimeout != null) {
-            builder.connectTimeout(connectTimeout, TimeUnit.SECONDS);
-        } else {
-            builder.connectTimeout(DEFAULT_CONNECT_TIMEOUT, TimeUnit.SECONDS);
-        }
+        builder.connectTimeout(Objects.requireNonNullElse(connectTimeout, DEFAULT_CONNECT_TIMEOUT), TimeUnit.SECONDS);
 
-        if (readTimeout != null) {
-            builder.readTimeout(readTimeout, TimeUnit.SECONDS);
-        } else {
-            builder.readTimeout(DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS);
-        }
+        builder.readTimeout(Objects.requireNonNullElse(readTimeout, DEFAULT_READ_TIMEOUT), TimeUnit.SECONDS);
 
         if (proxy != null) {
             builder.proxy(proxy);
